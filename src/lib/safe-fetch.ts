@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Téléchargement sécurisé des fichiers que les prestataires mettent à disposition (aperçu,
+ * preuve de dépôt, AR). On n'accepte que du HTTPS, vers des domaines autorisés, jamais vers
+ * une adresse interne du serveur (protection « SSRF »).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { PostalError } from "./errors.js";
@@ -20,6 +27,8 @@ export interface SafeFetchOptions {
   skipDnsCheck?: boolean;
 }
 
+// EN CLAIR : Dit si une adresse IP est interne (réseau privé, machine locale) : on refuse de s'y
+// connecter.
 export function isPrivateIp(ip: string): boolean {
   if (isIP(ip) === 4) {
     const [a, b] = ip.split(".").map(Number) as [number, number];
@@ -39,6 +48,7 @@ export function isPrivateIp(ip: string): boolean {
   return v6 === "::1" || v6 === "::" || v6.startsWith("fc") || v6.startsWith("fd") || v6.startsWith("fe80");
 }
 
+// EN CLAIR : Vérifie que le domaine appartient à la liste blanche (ex. servicepostal.com).
 export function hostAllowed(host: string, suffixes: string[]): boolean {
   const h = host.toLowerCase();
   return suffixes.some((s) => {
@@ -47,6 +57,8 @@ export function hostAllowed(host: string, suffixes: string[]): boolean {
   });
 }
 
+// EN CLAIR : Télécharge le fichier après toutes les vérifications, avec une taille et une durée
+// maximales.
 export async function safeDownload(rawUrl: string, opts: SafeFetchOptions): Promise<{ bytes: Uint8Array; contentType: string | null }> {
   let url: URL;
   try {

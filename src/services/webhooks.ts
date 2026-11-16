@@ -1,3 +1,12 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Réception des notifications (« webhooks ») envoyées par les prestataires. L'adresse de
+ * réception contient un code secret propre à chaque connexion. Chaque notification est
+ * conservée chiffrée comme trace, les doublons sont ignorés, et on n'en croit jamais le
+ * contenu : elle déclenche seulement une vérification de l'état réel via l'API. Un faux
+ * message ne peut donc rien modifier.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { Dispatch, ProviderConnection, ProviderName, Scope } from "../domain/types.js";
 import { sha256, safeEqual, uuid } from "../lib/util.js";
 import { nowIso, providerEnabled, storeAsset, type Deps } from "./context.js";
@@ -33,6 +42,8 @@ export interface WebhookReceipt {
 
 export const MAX_WEBHOOK_BYTES = 64 * 1024;
 
+// EN CLAIR : Reçoit une notification : vérifie le code secret, ignore les doublons, garde une copie
+// chiffrée, retrouve le courrier, lance la vérification.
 export async function ingestWebhook(deps: Deps, provider: ProviderName, token: string, rawBody: string): Promise<WebhookOutcome> {
   if (!deps.config.flags.POSTAL_MODULE_ENABLED || !providerEnabled(deps, provider)) return { httpStatus: 404, result: "rejected" };
   if (Buffer.byteLength(rawBody) > MAX_WEBHOOK_BYTES || token.length < 32) return { httpStatus: 404, result: "rejected" };

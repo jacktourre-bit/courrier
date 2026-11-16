@@ -1,3 +1,9 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Démarre le travailleur en arrière-plan : file d'envoi toutes les 15 secondes, puis une fois
+ * par jour l'automate d'anniversaires et la purge de conservation.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { depsFromEnv } from "./bootstrap.js";
 import { runOutboxOnce } from "./services/worker.js";
 import { runBirthdayScheduler } from "./services/campaigns.js";

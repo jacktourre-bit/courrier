@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * La version PostgreSQL de l'accès aux données. En plus du filtre du code, la base elle-même
+ * refuse l'accès aux autres sociétés (« RLS », sécurité au niveau des lignes) : double
+ * protection.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import pg from "pg";
 import type { Scope } from "../domain/types.js";
 import { PostalError } from "../lib/errors.js";
@@ -30,6 +37,8 @@ function fromRow<T>(r: Record<string, unknown>): T {
 
 type Queryable = Pick<pg.PoolClient, "query">;
 
+// EN CLAIR : Construit la partie « WHERE » d'une requête SQL de façon sûre (aucune injection
+// possible).
 function buildWhere(where: Where, params: unknown[]): string {
   const parts: string[] = [];
   for (const [k, cond] of Object.entries(where)) {

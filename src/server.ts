@@ -1,3 +1,8 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Démarre l'API (le serveur web du module).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { serve } from "@hono/node-server";
 import { createApi } from "./api/app.js";
 import { hs256Authenticator } from "./api/auth.js";

@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Les « variables » des modèles de lettre, comme {{patient.prenom}}. La liste est fermée : un
+ * modèle ne peut utiliser que des variables connues. Les variables sensibles (NIR, santé) ne
+ * sont jamais remplies automatiquement : un utilisateur habilité doit les saisir.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { Purpose, Sensitivity, Subject, PostalAddress } from "./types.js";
 import { PostalError } from "../lib/errors.js";
 
@@ -44,6 +51,7 @@ export const fieldCategory = (key: string): FieldCategory | null => BY_KEY.get(k
 
 export const RELATIONAL_PURPOSES: Purpose[] = ["relationship", "marketing"];
 
+// EN CLAIR : Déduit le niveau de sensibilité d'un modèle à partir des variables qu'il utilise.
 export function fieldsSensitivity(keys: string[]): Sensitivity {
   let s: Sensitivity = keys.length ? "personal_non_health" : "public";
   for (const k of keys) {
@@ -54,6 +62,8 @@ export function fieldsSensitivity(keys: string[]): Sensitivity {
   return s;
 }
 
+// EN CLAIR : Contrôle un modèle avant de l'enregistrer : variables connues, et aucune variable
+// médicale dans un courrier relationnel (anniversaire, remerciement).
 /** Contrôle à l'enregistrement d'une version de modèle. */
 export function validateTemplateFields(purpose: Purpose, allowed: string[], body: string): void {
   for (const k of allowed) {
@@ -68,6 +78,7 @@ export function validateTemplateFields(purpose: Purpose, allowed: string[], body
   }
 }
 
+// EN CLAIR : Trouve toutes les {{variables}} écrites dans un texte.
 export function extractPlaceholders(text: string): string[] {
   const out = new Set<string>();
   for (const m of text.matchAll(/\{\{\s*([a-z_]+\.[a-z_]+)\s*\}\}/g)) out.add(m[1]!);
@@ -82,6 +93,8 @@ export interface MergeContext {
   today: string;
 }
 
+// EN CLAIR : Vérifie un numéro de sécurité sociale grâce à sa clé de contrôle (les 2 derniers
+// chiffres).
 /** NIR (n° de sécurité sociale) : 13 chiffres + clé = 97 - (nombre mod 97) ; Corse 2A -> 19, 2B -> 18. */
 export function isValidNir(raw: string): boolean {
   const v = raw.replace(/\s+/g, "").toUpperCase();
@@ -91,6 +104,8 @@ export function isValidNir(raw: string): boolean {
   return 97 - Number(BigInt(body) % 97n) === key;
 }
 
+// EN CLAIR : Contrôle les valeurs sensibles saisies à la main (NIR valide, format de date…) et exige
+// qu'aucune ne manque.
 /**
  * Valeurs sensibles/santé : jamais déduites du dossier, toujours saisies par un
  * utilisateur habilité pour CE courrier (minimisation, §13.1).
@@ -114,6 +129,8 @@ export function validateSensitiveValues(allowed: string[], provided: Record<stri
   return out;
 }
 
+// EN CLAIR : Remplit les variables non sensibles à partir du dossier (prénom, nom du centre, date du
+// jour…). Si une valeur manque : erreur, jamais un trou silencieux dans la lettre.
 /** Valeurs calculées depuis les sources de vérité. Les champs sensibles/santé ne sont jamais résolus ici. */
 export function resolveMergeValues(allowed: string[], ctx: MergeContext, opts: { skipSensitive?: boolean } = {}): Record<string, string> {
   const values: Record<string, string | null | undefined> = {
@@ -146,6 +163,7 @@ export function resolveMergeValues(allowed: string[], ctx: MergeContext, opts: {
   return out;
 }
 
+// EN CLAIR : Remplace les {{variables}} par leurs valeurs dans un texte.
 export function renderText(text: string, values: Record<string, string>): string {
   return text.replace(/\{\{\s*([a-z_]+\.[a-z_]+)\s*\}\}/g, (_, k: string) => {
     const v = values[k];
@@ -164,6 +182,8 @@ const HEALTH_TERMS = [
   "mdph", "handicap", "invalidité", "sécurité sociale", "nir", "cpam", "mutuelle", "ald", "certificat médical", "compte rendu",
 ];
 
+// EN CLAIR : Filet de sécurité : repère des mots de santé (audiogramme, ordonnance, MDPH…) dans un
+// texte.
 export function detectHealthTerms(text: string): string[] {
   const t = text.toLowerCase();
   return HEALTH_TERMS.filter((w) => new RegExp(`(^|[^a-zà-ÿ])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(t));

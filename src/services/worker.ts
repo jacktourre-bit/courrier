@@ -1,3 +1,11 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Le « travailleur » qui tourne en continu en arrière-plan. Il prend les tâches de la file
+ * d'envoi une par une : envoyer, vérifier l'état chez le prestataire, récupérer les preuves,
+ * annuler, valider ou bloquer chez Manuscry. Règle d'or : en cas de doute sur un envoi, on
+ * vérifie, on ne renvoie jamais à l'aveugle.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { Dispatch, Evidence, EvidenceKind, OutboxItem, PostalEvent, ProviderConnection, Scope } from "../domain/types.js";
 import { applyProviderStatus, TERMINAL } from "../domain/state-machine.js";
 import type { ProviderResult, StatusResult } from "../providers/types.js";
@@ -19,10 +27,13 @@ const MAX_RECONCILES = 21;
 /** Durée maximale d'attente d'une preuve (AR papier scanné, preuve de dépôt) avant alerte humaine. */
 const EVIDENCE_WAIT_DAYS = 60;
 
+// EN CLAIR : Calcule l'attente avant une nouvelle tentative : de plus en plus long (30 s, 1 min, 2
+// min… jusqu'à 6 h).
 export function backoffMs(attempt: number): number {
   return Math.min(6 * 3_600_000, 30_000 * 2 ** Math.max(0, attempt - 1));
 }
 
+// EN CLAIR : Prend les tâches dues et les exécute, chacune limitée à sa société.
 export async function runOutboxOnce(deps: Deps, limit = 20): Promise<{ processed: number }> {
   const sys = deps.db.withScope({ tenantId: "*", legalEntityIds: "*", centerIds: "*", userId: null });
   const items = (await sys.claimOutbox(nowIso(deps), limit, 5 * 60_000)) as unknown as OutboxItem[];
@@ -43,6 +54,8 @@ async function done(ctx: WCtx, it: OutboxItem, note: string | null = null) {
   await ctx.db.update("postal_outbox", { id: it.id }, { status: "done", lockedUntil: null, lastError: note, attempts: it.attempts + 1 });
 }
 
+// EN CLAIR : Gère un échec : nouvelle tentative plus tard, ou tâche humaine si c'est définitif ou trop
+// répété.
 async function failItem(ctx: WCtx, it: OutboxItem, err: string, mode: "retry" | "human" | "retry_after", retryAfterMs?: number) {
   const attempts = it.attempts + 1;
   if (mode === "human" || attempts >= ctx.config.outboxMaxAttempts) {
@@ -83,6 +96,9 @@ async function processItem(ctx: WCtx, it: OutboxItem) {
 
 // ----------------------------------------------------------------- SUBMIT
 
+// EN CLAIR : Envoie le courrier au prestataire. Avant : revérifie la conformité et que le contenu est
+// bien celui approuvé, et pose un marqueur « tentative en cours » (si le serveur plante, on saura
+// qu'il faut vérifier au lieu de renvoyer).
 async function submitItem(ctx: WCtx, it: OutboxItem) {
   let d = await loadDispatch(ctx, it.dispatchId);
   if (d.status !== "APPROVED" && d.status !== "SCHEDULED") return done(ctx, it, `ignoré : statut ${d.status}`);
@@ -130,6 +146,8 @@ async function submitItem(ctx: WCtx, it: OutboxItem) {
   return handleSubmitFailure(ctx, it, d, r);
 }
 
+// EN CLAIR : Décide quoi faire selon l'échec : inconnu → vérification ; réseau → nouvelle tentative ;
+// crédits insuffisants, clé invalide, campagne suspendue → tâche humaine.
 async function handleSubmitFailure(ctx: WCtx, it: OutboxItem, d: Dispatch, r: Extract<ProviderResult<unknown>, { ok: false }>) {
   switch (r.kind) {
     case "UNKNOWN": {
@@ -156,6 +174,9 @@ async function handleSubmitFailure(ctx: WCtx, it: OutboxItem, d: Dispatch, r: Ex
 
 // -------------------------------------------------------------- RECONCILE
 
+// EN CLAIR : Rapprochement : demande au prestataire l'état réel, met à jour le courrier, enregistre
+// les événements, déclenche la récupération des preuves disponibles et archive l'historique de suivi à
+// la distribution.
 export async function reconcileDispatch(ctx: WCtx, d: Dispatch): Promise<{ dispatch: Dispatch; status: ProviderResult<StatusResult> }> {
   const { conn, adapter } = await resolveConnection(ctx, d.legalEntityId, d.provider);
   const st = await adapter.getStatus(conn, { uid: d.providerUid, identifier: d.reference, letterId: d.providerLetterId, leadId: d.providerLeadId, campaignId: d.providerCampaignId });
@@ -233,6 +254,8 @@ export async function reconcileDispatch(ctx: WCtx, d: Dispatch): Promise<{ dispa
   return { dispatch: next, status: st };
 }
 
+// EN CLAIR : Archive l'historique complet de distribution (réponse de suivi) comme preuve, avec son
+// empreinte.
 async function storeTrackingEvidence(ctx: WCtx, d: Dispatch, raw: unknown, provider: string) {
   if (await ctx.db.one<Evidence>("postal_evidence", { dispatchId: d.id, kind: "tracking" })) return;
   const bytes = new TextEncoder().encode(JSON.stringify({ uid: d.providerUid, reference: d.reference, status: d.status, fetchedAt: nowIso(ctx), source: `${provider}:/lettres/{uid}/suivi`, response: raw }, null, 2));
@@ -245,6 +268,7 @@ async function storeTrackingEvidence(ctx: WCtx, d: Dispatch, raw: unknown, provi
   await audit(ctx, { legalEntityId: d.legalEntityId, action: "evidence.stored", objectType: "dispatch", objectId: d.id, metadata: { kind: "tracking", sha256: asset.sha256 } });
 }
 
+// EN CLAIR : Met en file la récupération d'une preuve qui n'a pas encore été obtenue.
 async function queueEvidence(ctx: WCtx, d: Dispatch, kind: EvidenceKind) {
   if (!evidenceExpected(d).includes(kind)) return;
   const have = await ctx.db.one<Evidence>("postal_evidence", { dispatchId: d.id, kind });
@@ -257,6 +281,8 @@ async function queueEvidence(ctx: WCtx, d: Dispatch, kind: EvidenceKind) {
   }
 }
 
+// EN CLAIR : Exécute un rapprochement puis reprogramme le suivant (toutes les 24 h, 21 fois maximum) ;
+// ouvre une tâche si une preuve manque encore à la fin.
 async function reconcileItem(ctx: WCtx, it: OutboxItem) {
   const d = await loadDispatch(ctx, it.dispatchId);
   if (TERMINAL.includes(d.status) && d.status !== "DELIVERED") return done(ctx, it, "terminal");
@@ -282,6 +308,8 @@ async function reconcileItem(ctx: WCtx, it: OutboxItem) {
 
 // ------------------------------------------------------------- EVIDENCE
 
+// EN CLAIR : Récupère une preuve. Si elle n'est pas encore prête, réessaie patiemment (1 h, 2 h…
+// jusqu'à 24 h) pendant 60 jours maximum.
 async function evidenceItem(ctx: WCtx, it: OutboxItem) {
   const d = await loadDispatch(ctx, it.dispatchId);
   const kind = it.payloadJson.kind as EvidenceKind;
@@ -312,6 +340,8 @@ async function evidenceItem(ctx: WCtx, it: OutboxItem) {
 
 // --------------------------------------------------------------- CANCEL
 
+// EN CLAIR : Demande l'annulation au prestataire ; en cas de refus, le courrier reprend son statut et
+// une tâche est ouverte.
 async function cancelItem(ctx: WCtx, it: OutboxItem) {
   const d = await loadDispatch(ctx, it.dispatchId);
   if (d.status !== "CANCEL_REQUESTED") return done(ctx, it, `ignoré : ${d.status}`);
@@ -335,6 +365,7 @@ async function cancelItem(ctx: WCtx, it: OutboxItem) {
 
 // ---------------------------------------------- Validation / blocage Manuscry
 
+// EN CLAIR : Transmet à Manuscry la décision de valider ou refuser la lettre générée.
 async function providerValidateItem(ctx: WCtx, it: OutboxItem) {
   const d = await loadDispatch(ctx, it.dispatchId);
   const { conn, adapter } = await resolveConnection(ctx, d.legalEntityId, d.provider);
@@ -346,6 +377,7 @@ async function providerValidateItem(ctx: WCtx, it: OutboxItem) {
   return done(ctx, it);
 }
 
+// EN CLAIR : Bloque le contact chez Manuscry après une opposition.
 async function blockItem(ctx: WCtx, it: OutboxItem) {
   const d = await loadDispatch(ctx, it.dispatchId);
   const { conn, adapter } = await resolveConnection(ctx, d.legalEntityId, d.provider);

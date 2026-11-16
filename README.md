@@ -1,5 +1,7 @@
 # Module « Courriers & Correspondances »
 
+> Débutant ? Lisez d'abord [`docs/guide-debutant.md`](docs/guide-debutant.md) : le parcours d'un recommandé expliqué pas à pas, extraits de code à l'appui. Dans le code, cherchez `EN CLAIR`.
+
 Ce module crée, prévisualise, approuve, programme, envoie, suit et archive des courriers postaux, derrière une interface unique :
 
 - **Service Postal** pour les courriers formels PDF : simple, suivi, LR, LRAR, annexes, preuves.

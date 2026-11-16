@@ -1,3 +1,9 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Le rangement des fichiers (PDF, preuves). Chaque fichier est chiffré avant d'être écrit :
+ * sans la clé, il est illisible.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";

@@ -1,3 +1,12 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * L'outil qui appelle les API des prestataires. Son rôle essentiel : bien classer les échecs.
+ * Si la connexion est refusée avant d'envoyer quoi que ce soit, on peut réessayer sans risque.
+ * Si on a envoyé la demande mais qu'aucune réponse n'est revenue, on ne sait pas si le
+ * courrier a été créé : statut INCONNU, et surtout on ne renvoie pas (risque de double
+ * courrier).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { FailureKind, ProviderResult } from "./types.js";
 
 export interface HttpCallOptions {
@@ -35,6 +44,8 @@ const safeMsg = (body: unknown, status: number): string => {
   return typeof m === "string" ? m.slice(0, 160) : `HTTP ${status}`;
 };
 
+// EN CLAIR : Fait l'appel et renvoie soit la réponse, soit un échec classé : réessayable, inconnu,
+// définitif, limite de débit, clé invalide…
 export async function httpJson<T>(o: HttpCallOptions): Promise<ProviderResult<T>> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), o.timeoutMs ?? 30_000);

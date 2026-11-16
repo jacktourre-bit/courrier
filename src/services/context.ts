@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Les outils communs aux services : vérifier les droits, écrire dans le journal d'audit,
+ * ouvrir une tâche pour un humain, choisir la bonne connexion au prestataire, ranger et relire
+ * un fichier.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { ModuleConfig } from "../config/flags.js";
 import type { ProviderName, Scope, AuditEntry, ProviderConnection, Dispatch, Sensitivity } from "../domain/types.js";
 import type { PostalProviderAdapter } from "../providers/types.js";
@@ -33,16 +40,19 @@ export interface Ctx extends Deps {
 
 export const nowIso = (c: Pick<Deps, "clock">) => c.clock.now().toISOString();
 
+// EN CLAIR : Bloque si l'utilisateur n'a pas le droit demandé (ex. « postal.approve »).
 export function requirePermission(ctx: Ctx, perm: string): void {
   if (!ctx.permissions.has(perm)) throw new PostalError("FORBIDDEN", `Permission requise : ${perm}`);
 }
 
+// EN CLAIR : Bloque si l'utilisateur travaille sur une société ou un centre qui n'est pas le sien.
 export function requireEntity(ctx: Ctx, legalEntityId: string, centerId?: string | null): void {
   const s = ctx.scope;
   if (s.legalEntityIds !== "*" && !s.legalEntityIds.includes(legalEntityId)) throw new PostalError("FORBIDDEN", "Entité juridique non autorisée");
   if (centerId && s.centerIds && s.centerIds !== "*" && !s.centerIds.includes(centerId)) throw new PostalError("FORBIDDEN", "Centre non autorisé");
 }
 
+// EN CLAIR : Bloque tout si le module est éteint.
 export function requireModule(ctx: Pick<Deps, "config">): void {
   if (!ctx.config.flags.POSTAL_MODULE_ENABLED) throw new PostalError("MODULE_DISABLED", "Module courriers désactivé");
 }
@@ -51,6 +61,8 @@ export function providerEnabled(ctx: Pick<Deps, "config">, p: ProviderName): boo
   return p === "manuscry" ? ctx.config.flags.MANUSCRY_ENABLED : ctx.config.flags.SERVICEPOSTAL_ENABLED;
 }
 
+// EN CLAIR : Écrit une ligne dans le journal d'audit (qui a fait quoi, quand). Ce journal ne peut ni
+// être modifié ni effacé.
 export async function audit(ctx: Ctx | (Deps & { scope: Scope }), e: Omit<AuditEntry, "id" | "timestamp" | "tenantId" | "actorId" | "metadataRedacted"> & { tenantId?: string; metadata?: Record<string, unknown> }) {
   const tenantId = e.tenantId ?? ctx.scope.tenantId;
   await ctx.db.insert<AuditEntry>("postal_audit_logs", {
@@ -79,6 +91,8 @@ export interface HumanTask {
   closedBy: string | null;
 }
 
+// EN CLAIR : Crée une tâche pour un humain (« vérifier ceci ») quand l'automate ne peut pas décider
+// seul.
 export async function openTask(ctx: Deps & { scope: Scope }, d: Pick<Dispatch, "tenantId" | "legalEntityId" | "id">, kind: string, message: string) {
   await ctx.db.insert<HumanTask>("postal_human_tasks", {
     id: uuid(),
@@ -94,6 +108,8 @@ export async function openTask(ctx: Deps & { scope: Scope }, d: Pick<Dispatch, "
   });
 }
 
+// EN CLAIR : Trouve la connexion au prestataire pour cette société, en refusant la production pendant
+// les tests.
 /** Connexion prestataire d'une entité, avec garde-fous flags + production. */
 export async function resolveConnection(ctx: Deps & { scope: Scope }, legalEntityId: string, provider: ProviderName): Promise<{ conn: ProviderConnection; adapter: PostalProviderAdapter }> {
   if (!providerEnabled(ctx, provider)) throw new PostalError("PROVIDER_DISABLED", `Prestataire ${provider} désactivé`);
@@ -122,6 +138,7 @@ export interface Asset {
   purgedAt: string | null;
 }
 
+// EN CLAIR : Range un fichier chiffré et note son empreinte SHA-256.
 export async function storeAsset(
   ctx: Deps & { scope: Scope },
   a: { tenantId: string; legalEntityId: string; bytes: Uint8Array; mimeType: string; sensitivity: Sensitivity; kind: string; retentionPolicy?: string },
@@ -144,6 +161,8 @@ export async function storeAsset(
   });
 }
 
+// EN CLAIR : Relit un fichier et vérifie que son empreinte n'a pas changé (sinon : alerte
+// d'intégrité).
 export async function readAsset(ctx: Deps & { scope: Scope }, assetId: string): Promise<{ asset: Asset; bytes: Uint8Array }> {
   const asset = await ctx.db.one<Asset>("postal_assets", { id: assetId });
   if (!asset) throw new PostalError("NOT_FOUND", "Pièce introuvable");
@@ -153,6 +172,7 @@ export async function readAsset(ctx: Deps & { scope: Scope }, assetId: string): 
   return { asset, bytes };
 }
 
+// EN CLAIR : Pour lire un document de santé, il faut une permission accordée nominativement.
 /** Lecture d'un contenu sensible/santé : permission nominative obligatoire (P4). */
 export function requireSensitiveRead(ctx: Ctx, sensitivity: Sensitivity): void {
   if ((sensitivity === "health" || sensitivity === "personal_sensitive") && !ctx.permissions.has("postal.sensitive.read")) {

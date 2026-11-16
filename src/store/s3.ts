@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Rangement des fichiers dans un stockage objet compatible S3, par exemple OVHcloud Object
+ * Storage. Les fichiers sont chiffrés par notre application AVANT d'être envoyés : l'hébergeur
+ * ne voit jamais un document en clair.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
 import { uuid } from "../lib/util.js";
 import type { BlobStore } from "./blobs.js";
@@ -42,6 +49,8 @@ export interface SignInput {
   date: Date;
 }
 
+// EN CLAIR : Signe chaque requête avec la clé d'accès (méthode standard « AWS SigV4 »), comme une
+// signature au bas d'une lettre. Vérifiée contre la bibliothèque officielle d'AWS.
 /** Signature AWS Signature Version 4 ; renvoie les en-têtes à ajouter. */
 export function signV4(i: SignInput): Record<string, string> {
   const amzDate = i.date.toISOString().replace(/[:-]|\.\d{3}/g, "");

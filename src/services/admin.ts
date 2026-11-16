@@ -1,3 +1,9 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * L'administration : connexions aux prestataires, annuaire (personnes, adresses, organismes),
+ * profils d'expéditeur, budgets, autorisations pour les courriers de santé.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { randomBytes } from "node:crypto";
 import type {
   Budget,
@@ -18,6 +24,8 @@ import { audit, nowIso, requireEntity, requirePermission, type Ctx } from "./con
 
 // ------------------------------------------------------------ Connexions
 
+// EN CLAIR : Enregistre une connexion à un prestataire. On stocke une référence vers la clé, jamais la
+// clé elle-même. Le code secret des webhooks n'est montré qu'une fois.
 export async function createConnection(
   ctx: Ctx,
   i: { legalEntityId: string; provider: ProviderName; environment: "sandbox" | "production"; credentialsSecretRef: string; settings?: Record<string, unknown> },
@@ -54,6 +62,7 @@ function sanitizeSettings(s: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+// EN CLAIR : Vérifie que la clé fonctionne.
 export async function testConnection(ctx: Ctx, id: string) {
   requirePermission(ctx, "postal.config.manage");
   const c = await ctx.db.one<ProviderConnection>("postal_provider_connections", { id });
@@ -69,6 +78,7 @@ export async function testConnection(ctx: Ctx, id: string) {
 
 // --------------------------------------------------------------- Annuaire
 
+// EN CLAIR : Crée ou met à jour une personne (patient, contact).
 export async function upsertSubject(ctx: Ctx, s: Omit<Subject, "tenantId" | "birthMd" | "id"> & { id?: string }): Promise<Subject> {
   requirePermission(ctx, "postal.directory.manage");
   requireEntity(ctx, s.legalEntityId, s.centerId);
@@ -80,6 +90,8 @@ export async function upsertSubject(ctx: Ctx, s: Omit<Subject, "tenantId" | "bir
   return row;
 }
 
+// EN CLAIR : Ajoute une nouvelle version d'adresse. Les courriers déjà approuvés gardent l'ancienne
+// adresse.
 /** Nouvelle adresse = nouvelle version ; les envois approuvés gardent leur instantané. */
 export async function addRecipientAddress(ctx: Ctx, i: { legalEntityId: string; subjectType: SubjectType; subjectId: string; address: PostalAddress; verifiedAt?: string | null; verificationSource?: string | null }): Promise<RecipientAddress> {
   requirePermission(ctx, "postal.directory.manage");
@@ -106,6 +118,7 @@ export async function addRecipientAddress(ctx: Ctx, i: { legalEntityId: string; 
   return row;
 }
 
+// EN CLAIR : Crée ou met à jour un organisme (CPAM, MDPH, bailleur…).
 export async function upsertOrganization(ctx: Ctx, o: Omit<Organization, "tenantId" | "version" | "id"> & { id?: string }): Promise<Organization> {
   requirePermission(ctx, "postal.organizations.manage");
   if (o.legalEntityId) requireEntity(ctx, o.legalEntityId);
@@ -119,6 +132,8 @@ export async function upsertOrganization(ctx: Ctx, o: Omit<Organization, "tenant
   return row;
 }
 
+// EN CLAIR : Crée ou met à jour l'expéditeur affiché sur les courriers (dont le nom discret pour
+// l'enveloppe).
 export async function upsertSenderProfile(ctx: Ctx, p: Omit<SenderProfile, "tenantId" | "id"> & { id?: string }): Promise<SenderProfile> {
   requirePermission(ctx, "postal.config.manage");
   requireEntity(ctx, p.legalEntityId, p.centerId);
@@ -132,6 +147,7 @@ export async function upsertSenderProfile(ctx: Ctx, p: Omit<SenderProfile, "tena
   return row;
 }
 
+// EN CLAIR : Fixe un budget mensuel.
 export async function setBudget(ctx: Ctx, b: Omit<Budget, "tenantId" | "id">): Promise<Budget> {
   requirePermission(ctx, "postal.config.manage");
   requireEntity(ctx, b.legalEntityId, b.centerId);
@@ -142,6 +158,8 @@ export async function setBudget(ctx: Ctx, b: Omit<Budget, "tenantId" | "id">): P
   return row;
 }
 
+// EN CLAIR : P4 : autorise les courriers de santé pour un prestataire, un modèle et une société. Exige
+// les références DPO et DPA et le certificat HDS (référence, activités, date de fin). Réservé au DPO.
 /**
  * Autorisation d'envoi sensible : réservée au DPO / responsable conformité, avec MFA (§13.2).
  * Exige la référence de l'analyse DPO et du DPA ; pour `hds_certified`, le certificat,
@@ -175,6 +193,7 @@ export async function grantSensitiveAuthorization(
   return row;
 }
 
+// EN CLAIR : P4 : retire cette autorisation ; les courriers concernés sont alors bloqués.
 export async function revokeSensitiveAuthorization(ctx: Ctx, id: string, reason: string): Promise<void> {
   requirePermission(ctx, "postal.sensitive.authorize");
   const a = await ctx.db.one<SensitiveAuthorization>("postal_sensitive_authorizations", { id });

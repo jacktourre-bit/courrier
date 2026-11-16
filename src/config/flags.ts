@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Les interrupteurs du module (« feature flags »). Tous sont éteints par défaut. Exemple :
+ * SENSITIVE_POSTAL_ALLOWED autorise les courriers de santé ; hors production, les connexions «
+ * production » sont toujours refusées pour qu'aucun vrai courrier ne parte pendant les tests.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 /**
  * Feature flags (§19.5). Tous désactivés par défaut : le module ne fait rien
  * tant qu'il n'est pas explicitement activé. `SENSITIVE_POSTAL_ALLOWED` ne
@@ -27,6 +34,7 @@ export const FLAG_NAMES = [
 
 const truthy = (v: string | undefined) => v !== undefined && ["1", "true", "yes", "on"].includes(v.toLowerCase());
 
+// EN CLAIR : Lit les interrupteurs dans la configuration du serveur (fichier .env).
 export function flagsFromEnv(env: NodeJS.ProcessEnv = process.env): FeatureFlags {
   const flags = Object.fromEntries(FLAG_NAMES.map((n) => [n, truthy(env[n])])) as unknown as FeatureFlags;
   // Hors production, jamais d'envoi réel (§19.6) quel que soit le flag.
@@ -47,6 +55,7 @@ export interface ModuleConfig {
   allowSelfApprovalRelationship: boolean;
 }
 
+// EN CLAIR : Lit toute la configuration (interrupteurs, TVA, nombre de tentatives…).
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ModuleConfig {
   return {
     flags: flagsFromEnv(env),

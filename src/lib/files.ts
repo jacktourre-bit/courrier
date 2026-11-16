@@ -1,8 +1,16 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Contrôle des fichiers déposés par les utilisateurs : on vérifie le vrai type (PDF ou Word)
+ * en lisant le début du fichier, on passe l'antivirus, on compte les pages.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { PDFDocument } from "pdf-lib";
 import { PostalError } from "./errors.js";
 
 export type AllowedMime = "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
+// EN CLAIR : Regarde les premiers octets du fichier pour savoir si c'est vraiment un PDF ou un DOCX
+// (on ne croit pas l'extension).
 /** Vérifie la signature binaire (magic bytes) — le MIME déclaré n'est jamais cru seul. */
 export function sniffMime(bytes: Uint8Array): AllowedMime | null {
   if (bytes.length >= 5 && String.fromCharCode(...bytes.slice(0, 5)) === "%PDF-") return "application/pdf";
@@ -16,6 +24,7 @@ export function sniffMime(bytes: Uint8Array): AllowedMime | null {
   return null;
 }
 
+// EN CLAIR : Compte les pages d'un PDF.
 export async function pdfPageCount(bytes: Uint8Array): Promise<number> {
   try {
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: false, updateMetadata: false });
@@ -31,6 +40,8 @@ export interface MalwareScanner {
   scan(bytes: Uint8Array): Promise<{ clean: boolean; engine: string }>;
 }
 
+// EN CLAIR : Antivirus « absent » : refuse tout en production, accepte en test. À remplacer par un
+// vrai antivirus.
 /** Scanner absent : refuse tout en production, accepte en dev/test avec traçabilité. */
 export function noScanner(allowUnscanned: boolean): MalwareScanner {
   return {
@@ -42,6 +53,7 @@ export function noScanner(allowUnscanned: boolean): MalwareScanner {
   };
 }
 
+// EN CLAIR : Enchaîne tous les contrôles d'un fichier déposé : taille, type réel, antivirus, pages.
 export async function validateUpload(
   bytes: Uint8Array,
   declaredMime: string,

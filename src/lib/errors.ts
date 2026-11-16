@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Les erreurs du module. Quand quelque chose est refusé (droit manquant, donnée invalide,
+ * envoi bloqué), le code « lance » une PostalError avec un code court (ex. FORBIDDEN) que
+ * l'écran peut afficher clairement.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 /**
  * Erreurs métier typées. `code` est stable et exploitable par l'interface ;
  * `message` ne doit jamais contenir de donnée personnelle ni de secret.
@@ -56,6 +63,7 @@ export const fail = (code: ErrorCode, message: string, details?: Record<string, 
   throw new PostalError(code, message, details);
 };
 
+// EN CLAIR : Vérifie une condition ; si elle est fausse, arrête tout avec une erreur explicite.
 export function assert(cond: unknown, code: ErrorCode, message: string, details?: Record<string, unknown>): asserts cond {
   if (!cond) throw new PostalError(code, message, details);
 }

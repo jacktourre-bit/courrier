@@ -1,3 +1,11 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Accès aux données. Deux versions avec les mêmes fonctions : une en mémoire (pour les tests)
+ * et une PostgreSQL (pour la vraie vie). Chaque lecture et écriture est automatiquement
+ * limitée à la société de l'utilisateur : impossible de voir ou modifier les données d'une
+ * autre société.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { Scope } from "../domain/types.js";
 import { PostalError } from "../lib/errors.js";
 
@@ -71,6 +79,7 @@ export const UNIQUES: Partial<Record<Table, string[][]>> = {
 /** Tables sans colonne legal_entity_id obligatoire (filtrées par tenant seulement). */
 export const NULLABLE_ENTITY: Table[] = ["postal_audit_logs", "postal_organizations", "postal_webhook_receipts"];
 
+// EN CLAIR : Teste si une ligne correspond aux critères de recherche.
 export function matches(row: Record<string, unknown>, where: Where): boolean {
   for (const [k, cond] of Object.entries(where)) {
     const v = row[k];
@@ -87,6 +96,7 @@ export function matches(row: Record<string, unknown>, where: Where): boolean {
   return true;
 }
 
+// EN CLAIR : Refuse d'écrire une ligne qui appartient à une autre société.
 export function assertRowInScope(scope: Scope, table: Table, row: Record<string, unknown>): void {
   if (scope.tenantId !== "*" && row.tenantId !== scope.tenantId) throw new PostalError("FORBIDDEN", "Écriture hors tenant");
   if (scope.legalEntityIds === "*") return;
@@ -95,6 +105,7 @@ export function assertRowInScope(scope: Scope, table: Table, row: Record<string,
   if (!le || !scope.legalEntityIds.includes(le)) throw new PostalError("FORBIDDEN", "Écriture hors entité juridique autorisée");
 }
 
+// EN CLAIR : Masque les lignes des autres sociétés.
 export function scopeFilter(scope: Scope, table: Table, row: Record<string, unknown>): boolean {
   if (scope.tenantId !== "*" && row.tenantId !== scope.tenantId) return false;
   if (scope.legalEntityIds === "*") return true;

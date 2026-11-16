@@ -1,3 +1,11 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Le traducteur vers Manuscry (cartes écrites à la main). Particularités de leur API : l'ajout
+ * d'un contact ne renvoie pas d'identifiant de lettre, donc on retrouve tout grâce à notre
+ * référence CORR-… ; une date d'envoi passée part immédiatement, donc on la refuse ; pas
+ * d'environnement de test, donc écritures interdites hors production.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { DispatchStatus, ProviderConnection } from "../../domain/types.js";
 import { httpJson } from "../http.js";
 import { sha256, parisDate } from "../../lib/util.js";
@@ -133,6 +141,7 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     };
   }
 
+  // EN CLAIR : Lit la configuration d'une campagne Manuscry : type, statut, champs obligatoires.
   async getCampaignSettings(conn: ProviderConnection, campaignId: string): Promise<ProviderResult<ManuscryCampaignSettings>> {
     const r = await this.call<{ success?: boolean; data?: ManuscryCampaignSettings } & Partial<ManuscryCampaignSettings>>(
       conn, "GET", `/campaigns/${encodeURIComponent(campaignId)}/settings`, undefined, false,
@@ -143,6 +152,8 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     return ok(s);
   }
 
+  // EN CLAIR : Liste les variables de la lettre (ex. « prenom »), lues chez Manuscry, jamais écrites en
+  // dur dans le code.
   /** Clés de variables de lettre, lues dynamiquement (jamais codées en dur). */
   static letterVariableKeys(s: ManuscryCampaignSettings): string[] {
     return s.fields.filter((f) => !SYSTEM_FIELDS.has(f.key)).map((f) => f.key);
@@ -185,6 +196,8 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     return unsupported<never>("Devis");
   }
 
+  // EN CLAIR : Prépare la fiche envoyée à Manuscry : nom en ligne 1, rue en ligne 2, ville en
+  // majuscules, date d'anniversaire si besoin.
   buildContactBody(req: SubmissionRequest, campaignType: string): ProviderResult<Record<string, string>> {
     const a = req.recipient;
     const name = [a.civility, a.firstName, a.lastName].filter(Boolean).join(" ") || a.company || "";
@@ -215,6 +228,8 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     return ok(body);
   }
 
+  // EN CLAIR : Ajoute le contact à la campagne après avoir vérifié qu'elle est active et que les champs
+  // obligatoires sont remplis.
   async submit(conn: ProviderConnection, req: SubmissionRequest): Promise<ProviderResult<SubmitResult>> {
     if (!req.campaignId) return { ok: false, kind: "DEFINITIVE", message: "campaignId requis" };
     const settings = await this.getCampaignSettings(conn, req.campaignId);
@@ -243,6 +258,7 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     return unsupported<SubmitResult>("Programmation séparée (utiliser scheduled_at à la soumission)");
   }
 
+  // EN CLAIR : Valide ou refuse la lettre générée par Manuscry (fenêtre de 60 minutes).
   async approve(conn: ProviderConnection, ref: ProviderRef, decision: "validate" | "reject") {
     if (!ref.letterId) return { ok: false as const, kind: "DEFINITIVE" as const, message: "letterId requis" };
     const path = decision === "validate" ? `/letters/validate/${encodeURIComponent(ref.letterId)}` : `/letters/reject/${encodeURIComponent(ref.letterId)}`;
@@ -251,6 +267,7 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     return ok({ effectiveAt: r.value?.data?.scheduled_validate_at ?? r.value?.data?.scheduled_delete_at ?? null });
   }
 
+  // EN CLAIR : Cherche les lettres liées à notre référence CORR-….
   async findLetters(conn: ProviderConnection, identifier: string, campaignId?: string | null): Promise<ProviderResult<ManuscryLetter[]>> {
     const q = new URLSearchParams({ lead_identifier: identifier, per_page: "20" });
     if (campaignId) q.set("campaign_filter", campaignId);
@@ -260,6 +277,7 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     return ok((r.value?.data ?? []).filter((l) => l.lead_identifier === identifier));
   }
 
+  // EN CLAIR : Vérifie si le contact existe chez Manuscry (utile après une coupure réseau).
   /** Recherche du contact (rapprochement après timeout). Correspondance par `identifier` à confirmer avec Manuscry. */
   async findContact(conn: ProviderConnection, identifier: string, campaignId?: string | null): Promise<ProviderResult<{ found: boolean; leadId: string | null }>> {
     const q = new URLSearchParams({ search: identifier });
@@ -270,6 +288,7 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     return ok({ found: !!hit, leadId: hit?.id !== undefined ? String(hit.id) : null });
   }
 
+  // EN CLAIR : Donne l'état réel de la carte chez Manuscry.
   async getStatus(conn: ProviderConnection, ref: ProviderRef): Promise<ProviderResult<StatusResult>> {
     if (!ref.identifier) return { ok: false, kind: "DEFINITIVE", message: "identifier requis" };
     const letters = await this.findLetters(conn, ref.identifier, ref.campaignId);
@@ -296,6 +315,7 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     });
   }
 
+  // EN CLAIR : Annulation : possible seulement pendant la validation ; sinon il faut bloquer le contact.
   async cancel(conn: ProviderConnection, ref: ProviderRef) {
     const st = await this.getStatus(conn, ref);
     if (!st.ok) return st;
@@ -311,6 +331,7 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     return unsupported<never>("Preuves");
   }
 
+  // EN CLAIR : Lit une notification Manuscry. Les scans de QR code sont ignorés pour les patients.
   handleWebhook(rawBody: string): ProviderResult<ParsedWebhook> {
     let p: { event?: string; timestamp?: string; campaign_id?: string | number; data?: Record<string, Record<string, unknown>> };
     try {
@@ -345,6 +366,7 @@ export class ManuscryAdapter implements PostalProviderAdapter {
     return ok(base);
   }
 
+  // EN CLAIR : Bloque le contact chez Manuscry (suite à une opposition du patient).
   async block(conn: ProviderConnection, ref: ProviderRef) {
     let leadId = ref.leadId;
     if (!leadId && ref.identifier) {

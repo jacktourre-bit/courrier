@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Les modèles de lettre et leurs versions. Une version doit être approuvée par une autre
+ * personne que son auteur avant d'être utilisée. Pour Manuscry, les variables sont vérifiées
+ * contre la campagne réelle.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { Purpose, ProviderName, Sensitivity, Template, TemplateBlockContent, TemplateVersion } from "../domain/types.js";
 import { validateTemplateFields, extractPlaceholders, detectHealthTerms, RELATIONAL_PURPOSES, fieldCategory } from "../domain/merge-fields.js";
 import { PostalError } from "../lib/errors.js";
@@ -13,6 +20,7 @@ export interface NewTemplateInput {
   title: string;
 }
 
+// EN CLAIR : Crée un modèle (formel pour Service Postal, manuscrit pour Manuscry).
 export async function createTemplate(ctx: Ctx, i: NewTemplateInput): Promise<Template> {
   requirePermission(ctx, "postal.templates.manage");
   requireEntity(ctx, i.legalEntityId);
@@ -32,6 +40,8 @@ export interface NewVersionInput {
   provider?: { campaignId: string; fieldMap: Record<string, string>; staticAiContext?: string | null };
 }
 
+// EN CLAIR : Ajoute une version : contrôle des variables, refus des mots de santé dans un modèle
+// relationnel, vérification des champs de la campagne Manuscry.
 export async function addTemplateVersion(ctx: Ctx, templateId: string, i: NewVersionInput): Promise<TemplateVersion> {
   requirePermission(ctx, "postal.templates.manage");
   const t = await ctx.db.one<Template>("postal_templates", { id: templateId });
@@ -85,6 +95,7 @@ export async function addTemplateVersion(ctx: Ctx, templateId: string, i: NewVer
   return v;
 }
 
+// EN CLAIR : Approuve une version (pas par son auteur) et archive l'ancienne.
 /** Approbation d'une version (auteur exclu) ; l'ancienne version approuvée est archivée. */
 export async function approveTemplateVersion(ctx: Ctx, versionId: string): Promise<TemplateVersion> {
   requirePermission(ctx, "postal.templates.approve");
@@ -102,6 +113,7 @@ export async function approveTemplateVersion(ctx: Ctx, versionId: string): Promi
   return { ...v, status: "approved", approvalsJson: approvals };
 }
 
+// EN CLAIR : Revient à une ancienne version.
 /** Retour arrière : ré-active une version archivée (nouvelle approbation tracée). */
 export async function rollbackTemplate(ctx: Ctx, templateId: string, versionId: string): Promise<void> {
   requirePermission(ctx, "postal.templates.approve");

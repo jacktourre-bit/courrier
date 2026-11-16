@@ -1,9 +1,18 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Les choix du patient : accord ou opposition, par société et par type de courrier. Une
+ * opposition annule immédiatement les courriers concernés pas encore partis et bloque le
+ * contact chez Manuscry.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { CampaignRecipient, ContactPreference, Dispatch, SubjectType } from "../domain/types.js";
 import { IN_FLIGHT, PRE_SUBMISSION } from "../domain/state-machine.js";
 import { uuid } from "../lib/util.js";
 import { audit, nowIso, requireEntity, requirePermission, type Ctx } from "./context.js";
 import { enqueue, transition } from "./dispatch-service.js";
 
+// EN CLAIR : Enregistre un accord ou une opposition et en tire les conséquences. L'historique est
+// conservé ; la plus récente fait foi.
 /**
  * Enregistre une préférence postale (par société, par finalité). Une opposition :
  *  - annule les envois non encore transmis de cette finalité ;

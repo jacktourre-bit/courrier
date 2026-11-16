@@ -1,3 +1,11 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Le contrôleur de conformité. Avant chaque étape importante, il vérifie tout : expéditeur,
+ * adresse, organisme, personne (décès, mineur, contentieux), opposition, modèle approuvé,
+ * doublon, et pour la santé l'autorisation DPA/HDS. Il renvoie la liste complète des blocages
+ * pour que l'utilisateur sache quoi corriger.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type {
   ContactPreference,
   Organization,
@@ -57,6 +65,7 @@ export interface ComplianceInput {
 
 const PROSPECT: Purpose[] = ["marketing"];
 
+// EN CLAIR : Fait tous les contrôles et dit « autorisé » ou « bloqué » avec la liste des raisons.
 export function evaluateCompliance(i: ComplianceInput): { allowed: boolean; blockers: Blocker[]; warnings: string[] } {
   const b: Blocker[] = [];
   const w: string[] = [];
@@ -152,6 +161,7 @@ export function evaluateCompliance(i: ComplianceInput): { allowed: boolean; bloc
   return { allowed: b.length === 0, blockers: b, warnings: w };
 }
 
+// EN CLAIR : Calcule l'âge exact (pour exclure les mineurs des envois automatiques).
 export function age(birthDate: string, today: string): number {
   const [by, bm, bd] = birthDate.split("-").map(Number) as [number, number, number];
   const [ty, tm, td] = today.split("-").map(Number) as [number, number, number];

@@ -1,3 +1,11 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Le « contrat » commun aux deux prestataires. Manuscry et Service Postal ont des API
+ * différentes ; chacun a un « adaptateur » qui traduit nos demandes dans sa langue. Ce fichier
+ * définit les opérations attendues (aperçu, devis, envoi, annulation, suivi, preuves,
+ * webhooks) et la façon de signaler un échec.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { DispatchStatus, EvidenceKind, PostageClass, PostalAddress, ProviderConnection, ProviderName } from "../domain/types.js";
 
 /**
@@ -171,6 +179,8 @@ export interface SecretStore {
   get(ref: string): Promise<string>;
 }
 
+// EN CLAIR : Lit une clé API rangée dans la configuration du serveur. En production, la remplacer par
+// un coffre-fort à secrets.
 /** Secrets référencés `env:NOM_VARIABLE`. À remplacer par un vrai gestionnaire de secrets en production. */
 export function envSecretStore(env: NodeJS.ProcessEnv = process.env): SecretStore {
   return {

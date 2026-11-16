@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Qui est l'utilisateur et qu'a-t-il le droit de faire. Chaque requête indique la société
+ * active ; seuls les droits de l'utilisateur dans cette société s'appliquent. Sans double
+ * authentification (MFA), les droits d'administration et de santé sont retirés.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { createHmac } from "node:crypto";
 import { ROLE_PERMISSIONS, type Role } from "../domain/policy.js";
 import type { Scope } from "../domain/types.js";
@@ -29,6 +36,8 @@ export interface Authenticator {
   authenticate(headers: Headers): Promise<Principal | null>;
 }
 
+// EN CLAIR : Calcule le périmètre (société, centres) et la liste des droits de l'utilisateur pour la
+// société choisie.
 export function scopeFor(p: Principal, legalEntityId: string | null): { scope: Scope; permissions: Set<string> } {
   if (!legalEntityId) throw new PostalError("VALIDATION", "En-tête X-Legal-Entity-Id requis");
   const m = p.memberships.find((x) => x.legalEntityId === legalEntityId);
@@ -39,6 +48,7 @@ export function scopeFor(p: Principal, legalEntityId: string | null): { scope: S
   return { scope: { tenantId: p.tenantId, legalEntityIds: [legalEntityId], centerIds: m.centerIds, userId: p.userId }, permissions: perms };
 }
 
+// EN CLAIR : Vérifie le jeton de connexion (JWT) : signature, date d'expiration, émetteur.
 /**
  * Authentificateur JWT HS256 autonome (déploiement sans hôte). Claims attendus :
  * sub, tid, exp, mfa (bool), ent: [{ id, roles, centers }], iss, aud.
@@ -75,6 +85,7 @@ export function hs256Authenticator(secret: string, opts: { issuer: string; audie
   };
 }
 
+// EN CLAIR : Fabrique un jeton (utilisé dans les tests).
 export function signHs256(secret: string, claims: Record<string, unknown>): string {
   const head = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
   const body = Buffer.from(JSON.stringify(claims)).toString("base64url");

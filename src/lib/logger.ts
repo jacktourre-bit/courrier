@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Le journal technique (les « logs »). Tout ce qui y est écrit passe d'abord par redact(), qui
+ * masque clés API, adresses, noms, documents et liens : rien de sensible ne doit fuiter dans
+ * les logs.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 /**
  * Logger JSON avec caviardage systématique. Aucune adresse, aucun document,
  * aucune clé API ni URL de document ne doit sortir dans les logs (cahier §13.3).
@@ -36,6 +43,8 @@ const SENSITIVE_KEYS = [
   "ai_context",
 ];
 
+// EN CLAIR : Parcourt un objet et remplace par « [redacted] » tout champ sensible (clé, adresse, nom,
+// document, URL).
 export function redact(value: unknown, depth = 0): unknown {
   if (depth > 6) return "[depth]";
   if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
@@ -63,6 +72,7 @@ export interface Logger {
   error(msg: string, meta?: Record<string, unknown>): void;
 }
 
+// EN CLAIR : Crée l'outil qui écrit les logs, déjà branché sur le masquage.
 export function createLogger(sink: (line: string) => void = (l) => process.stdout.write(`${l}\n`), minLevel: Level = "info"): Logger {
   const order: Level[] = ["debug", "info", "warn", "error"];
   const log = (level: Level, msg: string, meta?: Record<string, unknown>) => {

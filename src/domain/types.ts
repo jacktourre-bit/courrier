@@ -1,3 +1,9 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Le dictionnaire du module : la forme de chaque objet (un envoi, une adresse, un modèle, une
+ * preuve…). Aucun calcul ici, seulement des définitions.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 /** Types canoniques du module. Les noms reprennent le cahier des charges §10-11. */
 
 export const PURPOSES = ["transactional", "administrative", "relationship", "marketing", "legal"] as const;

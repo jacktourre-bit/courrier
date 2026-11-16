@@ -1,8 +1,16 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Durées de conservation des documents. Le DPO fixe une durée par type de document ; la purge
+ * efface le contenu passé ce délai et garde l'empreinte comme trace. Un courrier en cours
+ * n'est jamais purgé. Sans durée définie, rien n'est effacé.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { Dispatch, RetentionPolicy, Scope } from "../domain/types.js";
 import { TERMINAL } from "../domain/state-machine.js";
 import { uuid } from "../lib/util.js";
 import { audit, nowIso, requireEntity, requirePermission, type Asset, type Ctx, type Deps } from "./context.js";
 
+// EN CLAIR : Enregistre une durée de conservation pour un type de document.
 /**
  * Durées de conservation (§13.3) : aucune durée unique n'est imposée par le code.
  * Sans politique explicite, rien n'est purgé. Une purge supprime le contenu
@@ -32,6 +40,7 @@ async function inUse(ctx: Deps & { scope: Scope }, asset: Asset): Promise<boolea
   return [...refs, ...sensitive].some((d) => !TERMINAL.includes(d.status) && d.status !== "REJECTED" && d.status !== "FAILED_VALIDATION" && d.status !== "FAILED_PROVIDER");
 }
 
+// EN CLAIR : Efface les contenus dont la durée est écoulée.
 export async function runRetentionPurge(deps: Deps): Promise<{ purged: number; skippedInUse: number }> {
   const sys = deps.db.withScope({ tenantId: "*", legalEntityIds: "*", centerIds: "*", userId: null });
   const policies = await sys.find<RetentionPolicy>("postal_retention_policies", {});

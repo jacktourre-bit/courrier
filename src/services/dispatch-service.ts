@@ -1,3 +1,12 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Le cœur du module : la vie d'un courrier, de la création à l'envoi. Étapes : 1)
+ * createDispatch : contrôles + fabrication du PDF ; 2) previewDispatch : aperçu et prix chez
+ * le prestataire ; 3) requestApproval puis approveDispatch : approbations (une autre personne
+ * que l'auteur) ; 4) l'approbation finale met le courrier dans la « file d'envoi », traitée
+ * par le worker. Toute modification annule les approbations déjà données.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type {
   Approval,
   Attachment,
@@ -149,6 +158,8 @@ function throwIfBlocked(blockers: Blocker[]) {
   }
 }
 
+// EN CLAIR : Charge d'un coup tout ce qu'il faut pour contrôler un courrier : modèle, expéditeur,
+// adresse, organisme, personne, préférences, pièces, autorisation.
 async function loadAll(ctx: Deps & { scope: Scope }, p: {
   legalEntityId: string;
   centerId: string | null;
@@ -182,6 +193,7 @@ async function loadAll(ctx: Deps & { scope: Scope }, p: {
   return { template, version, sender: await loadSender(ctx, p.legalEntityId, p.centerId), address, organization, subject, preferences, attachments, authorization };
 }
 
+// EN CLAIR : Refait les contrôles sur l'état actuel (une opposition peut être arrivée entre-temps).
 /** Recharge l'état courant et ré-évalue la conformité (appelé avant chaque étape à risque). */
 export async function recheckCompliance(ctx: Deps & { scope: Scope }, d: Dispatch): Promise<Blocker[]> {
   const atts = await ctx.db.find<Attachment>("postal_attachments", { dispatchId: d.id });
@@ -212,6 +224,10 @@ export async function recheckCompliance(ctx: Deps & { scope: Scope }, d: Dispatc
 
 // ------------------------------------------------------------------ Création
 
+// EN CLAIR : Crée un courrier : choisit le prestataire, calcule la sensibilité, vérifie la conformité,
+// vérifie les pièces de santé et leur justification, remplit les variables, chiffre les données
+// sensibles à part, puis fabrique le PDF. Si la même demande arrive deux fois (même clé), on renvoie
+// le courrier déjà créé.
 export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Promise<Dispatch> {
   requireModule(ctx);
   requirePermission(ctx, "postal.draft");
@@ -419,6 +435,8 @@ export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Prom
 
 // ------------------------------------------------------------------ Rendu
 
+// EN CLAIR : Réunit les variables normales et les variables sensibles (relues depuis le fichier
+// chiffré) au moment de fabriquer le PDF.
 /** Valeurs de rendu : non sensibles (base) + sensibles (actif chiffré), jamais persistées ensemble. */
 async function renderValues(ctx: Deps & { scope: Scope }, d: Dispatch): Promise<Record<string, string>> {
   const id = (d.optionsJson as { sensitiveValuesAssetId?: string }).sensitiveValuesAssetId;
@@ -427,6 +445,8 @@ async function renderValues(ctx: Deps & { scope: Scope }, d: Dispatch): Promise<
   return { ...d.mergeValuesJson, ...(JSON.parse(new TextDecoder().decode(bytes)) as Record<string, string>) };
 }
 
+// EN CLAIR : Fabrique le PDF (Service Postal) ou l'empreinte du contenu (Manuscry) et passe le
+// courrier à « prêt pour aperçu ».
 async function renderDocument(ctx: Ctx, d: Dispatch): Promise<Dispatch> {
   const version = await ctx.db.one<TemplateVersion>("postal_template_versions", { id: d.templateVersionId! });
   if (!version) throw new PostalError("NOT_FOUND", "Version de modèle introuvable");
@@ -464,6 +484,8 @@ function manuscryVariables(d: Dispatch, v: TemplateVersion): Record<string, stri
 
 // ------------------------------------------------------------- Transitions
 
+// EN CLAIR : Fait avancer le courrier d'une étape. Si quelqu'un l'a modifié au même moment, refuse
+// (pas d'écrasement silencieux).
 export async function transition(ctx: Ctx | (Deps & { scope: Scope }), d: Dispatch, to: DispatchStatus, patch: Partial<Dispatch> = {}): Promise<Dispatch> {
   assertTransition(d.status, to);
   const next = { ...patch, status: to, updatedAt: nowIso(ctx), rowVersion: d.rowVersion + 1 };
@@ -473,6 +495,7 @@ export async function transition(ctx: Ctx | (Deps & { scope: Scope }), d: Dispat
   return { ...d, ...next } as Dispatch;
 }
 
+// EN CLAIR : Ajoute un événement à l'historique du courrier (la chronologie du dossier).
 export async function internalEvent(ctx: Deps & { scope: Scope }, d: Pick<Dispatch, "id" | "tenantId" | "legalEntityId">, type: string, status: DispatchStatus | null) {
   const at = nowIso(ctx);
   await ctx.db.insert<PostalEvent>("postal_events", {
@@ -491,6 +514,7 @@ export async function internalEvent(ctx: Deps & { scope: Scope }, d: Pick<Dispat
   });
 }
 
+// EN CLAIR : Lit un courrier en vérifiant les droits.
 export async function getDispatch(ctx: Ctx, id: string): Promise<Dispatch> {
   requirePermission(ctx, "postal.read");
   const d = await ctx.db.one<Dispatch>("postal_dispatches", { id });
@@ -501,11 +525,14 @@ export async function getDispatch(ctx: Ctx, id: string): Promise<Dispatch> {
 
 // ------------------------------------------------------------ Prévisualisation
 
+// EN CLAIR : Calcule le prix TTC : l'affranchissement n'a pas de TVA, le service a 20 %.
 export function ttcCents(ctx: Pick<Deps, "config">, postage: number | null, service: number | null, totalHt: number): number {
   if (postage === null || service === null) return Math.round(totalHt * (1 + ctx.config.serviceVatRate));
   return postage + Math.round(service * (1 + ctx.config.serviceVatRate));
 }
 
+// EN CLAIR : Prépare la demande au prestataire avec uniquement le nécessaire : adresse, PDF, pièces,
+// référence opaque.
 export async function buildSubmission(ctx: Ctx | (Deps & { scope: Scope }), d: Dispatch): Promise<SubmissionRequest> {
   const req: SubmissionRequest = {
     dispatchId: d.id,
@@ -541,6 +568,8 @@ export async function buildSubmission(ctx: Ctx | (Deps & { scope: Scope }), d: D
   return req;
 }
 
+// EN CLAIR : Contrôle de confidentialité, puis aperçu et prix chez le prestataire. L'aperçu PDF est
+// téléchargé et rangé chez nous, jamais montré par un lien du prestataire.
 export async function previewDispatch(ctx: Ctx, id: string): Promise<Dispatch> {
   requireModule(ctx);
   requirePermission(ctx, "postal.draft");
@@ -599,6 +628,8 @@ export async function previewDispatch(ctx: Ctx, id: string): Promise<Dispatch> {
 
 // --------------------------------------------------------------- Approbation
 
+// EN CLAIR : Calcule l'empreinte de ce qu'on approuve (PDF, adresse, pièces, prix, options). Si un
+// seul élément change, l'empreinte change.
 export async function computeApprovalHash(ctx: Ctx | (Deps & { scope: Scope }), d: Dispatch): Promise<string> {
   const atts = await ctx.db.find<Attachment>("postal_attachments", { dispatchId: d.id }, { orderBy: [["orderIndex", "asc"]] });
   return canonicalHash({
@@ -614,8 +645,11 @@ export async function computeApprovalHash(ctx: Ctx | (Deps & { scope: Scope }), 
   });
 }
 
+// EN CLAIR : Vérifie que le courrier n'a pas changé depuis la demande d'approbation.
 export const contentMatchesApproval = (contentHash: string, approvalHash: string | null): boolean => !!approvalHash && approvalHash.split(":")[0] === contentHash;
 
+// EN CLAIR : Ouvre un tour d'approbation. Une campagne déjà approuvée (anniversaire) passe
+// directement.
 export async function requestApproval(ctx: Ctx, id: string): Promise<Dispatch> {
   requireModule(ctx);
   requirePermission(ctx, "postal.draft");
@@ -637,6 +671,8 @@ export function requiredSteps(d: Dispatch) {
   return approvalPolicyFor(d, d.approvalPolicy === "campaign_preapproved").steps;
 }
 
+// EN CLAIR : Enregistre une approbation. Contrôle : bonne permission, une autre personne que l'auteur,
+// contenu inchangé, budget. Après la dernière étape, le courrier part dans la file d'envoi.
 export async function approveDispatch(ctx: Ctx, id: string, opts: { reason?: string | null; budgetOverride?: boolean } = {}): Promise<Dispatch> {
   requireModule(ctx);
   let d = await getDispatch(ctx, id);
@@ -692,6 +728,8 @@ async function recordApproval(ctx: Ctx, d: Dispatch, step: Approval["step"], act
   });
 }
 
+// EN CLAIR : Dernière vérification de conformité, puis mise en file d'envoi (immédiate ou à la date
+// programmée).
 async function finalizeApproval(ctx: Ctx, d: Dispatch, approver: string | null): Promise<Dispatch> {
   throwIfBlocked(await recheckCompliance(ctx, d));
   const scheduledLater = !!d.scheduledFor && d.scheduledFor > parisDate(ctx.clock.now());
@@ -701,6 +739,7 @@ async function finalizeApproval(ctx: Ctx, d: Dispatch, approver: string | null):
   return d;
 }
 
+// EN CLAIR : Pour un envoi programmé : émission le jour J à 8 h, heure de Paris.
 /** Envoi programmé : soumission le jour J à 08:00 Europe/Paris (≈ 07:00 UTC hiver, 06:00 été). */
 export function scheduleInstant(isoDate: string): string {
   const probe = new Date(`${isoDate}T08:00:00Z`);
@@ -708,6 +747,7 @@ export function scheduleInstant(isoDate: string): string {
   return new Date(probe.getTime() - (parisHour - 8) * 3_600_000).toISOString();
 }
 
+// EN CLAIR : Refus motivé par l'approbateur.
 export async function rejectDispatch(ctx: Ctx, id: string, reason: string): Promise<Dispatch> {
   requirePermission(ctx, "postal.approve");
   const d = await getDispatch(ctx, id);
@@ -717,6 +757,7 @@ export async function rejectDispatch(ctx: Ctx, id: string, reason: string): Prom
   return transition(ctx, d, "REJECTED");
 }
 
+// EN CLAIR : Annule les approbations quand le courrier a changé ; l'historique est conservé.
 async function invalidateApprovals(ctx: Ctx, d: Dispatch, reason: string) {
   // Historique d'approbation append-only : on trace l'invalidation, on ne réécrit rien.
   await recordApproval(ctx, d, "final", "invalidated", reason, d.approvalHash ?? "");
@@ -725,6 +766,8 @@ async function invalidateApprovals(ctx: Ctx, d: Dispatch, reason: string) {
   await audit(ctx, { legalEntityId: d.legalEntityId, action: "dispatch.approvals_invalidated", objectType: "dispatch", objectId: d.id, metadata: { reason } });
 }
 
+// EN CLAIR : Modifie un courrier pas encore envoyé (adresse, date, affranchissement) : les
+// approbations sont annulées et le PDF refait.
 /** Modification avant soumission : invalide les approbations et repasse par le rendu. */
 export async function modifyDispatch(ctx: Ctx, id: string, change: { scheduledFor?: string | null; postageClass?: PostageClass; options?: Dispatch["optionsJson"]; recipientAddressId?: string }): Promise<Dispatch> {
   requirePermission(ctx, "postal.draft");
@@ -781,6 +824,7 @@ export async function modifyDispatch(ctx: Ctx, id: string, change: { scheduledFo
 
 // ------------------------------------------------------------------ Annulation
 
+// EN CLAIR : Annule : directement si rien n'est parti, sinon demande au prestataire.
 export async function cancelDispatch(ctx: Ctx, id: string, reason: string): Promise<Dispatch> {
   requirePermission(ctx, "postal.cancel");
   const d = await getDispatch(ctx, id);
@@ -799,6 +843,7 @@ export async function cancelDispatch(ctx: Ctx, id: string, reason: string): Prom
 
 // ------------------------------------------------------------------- Outbox
 
+// EN CLAIR : Ajoute une tâche dans la file d'envoi (outbox), traitée par le worker.
 export async function enqueue(ctx: Deps & { scope: Scope }, d: Pick<Dispatch, "id" | "tenantId" | "legalEntityId">, action: OutboxAction, payload: Record<string, unknown>, at: string) {
   await ctx.db.insert<OutboxItem>("postal_outbox", {
     id: uuid(),
@@ -817,6 +862,8 @@ export async function enqueue(ctx: Deps & { scope: Scope }, d: Pick<Dispatch, "i
   });
 }
 
+// EN CLAIR : Télécharge le PDF pour l'envoyer par un autre canal autorisé (quand l'envoi externe est
+// interdit).
 /** Export sécurisé (canal déjà autorisé) quand l'envoi externe est interdit (§5.4.4). */
 export async function exportDocument(ctx: Ctx, id: string): Promise<{ bytes: Uint8Array; filename: string }> {
   requirePermission(ctx, "postal.export");
@@ -827,6 +874,8 @@ export async function exportDocument(ctx: Ctx, id: string): Promise<{ bytes: Uin
   return { bytes, filename: `${d.reference}.pdf` };
 }
 
+// EN CLAIR : Liste les preuves qu'on doit obtenir selon l'affranchissement : PDF imprimé ; + preuve de
+// dépôt pour LR/LRAR ; + AR scanné pour LRAR ; + historique de suivi.
 export const evidenceExpected = (d: Dispatch): string[] => {
   if (d.provider !== "servicepostal") return [];
   const out = ["final_document"];

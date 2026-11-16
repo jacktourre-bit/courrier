@@ -1,3 +1,9 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Les adresses postales : nettoyage (espaces, majuscules), vérification (code postal, 38
+ * caractères maximum par ligne, civilité acceptée par Service Postal).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { PostalAddress } from "./types.js";
 
 export interface AddressIssue {
@@ -25,6 +31,7 @@ const POSTCODE: Record<string, RegExp> = {
   IT: /^\d{5}$/,
 };
 
+// EN CLAIR : Nettoie une adresse : espaces en trop, ville en majuscules, pays en code à 2 lettres.
 export function normalizeAddress(a: PostalAddress): PostalAddress {
   const clean = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim() || null;
   return {
@@ -46,6 +53,8 @@ export function recipientName(a: PostalAddress): string {
   return [a.civility, a.firstName, a.lastName].filter(Boolean).join(" ").trim();
 }
 
+// EN CLAIR : Liste tous les problèmes d'une adresse (code postal faux, ligne trop longue, nom
+// manquant…).
 export function validateAddress(input: PostalAddress): AddressIssue[] {
   const a = normalizeAddress(input);
   const issues: AddressIssue[] = [];
@@ -65,6 +74,8 @@ export function validateAddress(input: PostalAddress): AddressIssue[] {
   return issues;
 }
 
+// EN CLAIR : Vrai si l'adresse est en France (ou Monaco). Sert au délai Manuscry : 5 jours en France,
+// 10 à l'international.
 export const isDomestic = (a: PostalAddress): boolean => ["FR", "MC"].includes(a.country.toUpperCase());
 
 /** Nom de pays attendu par Service Postal (liste en français de l'OpenAPI). Liste restreinte volontairement. */

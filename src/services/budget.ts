@@ -1,3 +1,9 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Les budgets : avant l'approbation finale, on additionne ce qui est déjà engagé ce mois-ci.
+ * Si le budget est dépassé, il faut une approbation exceptionnelle avec un motif.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { Budget, Dispatch } from "../domain/types.js";
 import { COMMITTED } from "../domain/state-machine.js";
 import { monthKey } from "../lib/util.js";
@@ -25,6 +31,8 @@ async function committed(ctx: Ctx, b: Budget, excludeId: string): Promise<number
     .reduce((s, d) => s + (d.quoteTtcCents ?? 0), 0);
 }
 
+// EN CLAIR : Calcule pour chaque budget concerné le déjà engagé + ce courrier, et dit si c'est
+// dépassé.
 /** Vérifie tous les budgets applicables (société, centre, campagne). */
 export async function checkBudgets(ctx: Ctx, d: Dispatch, amountCents: number): Promise<BudgetCheck[]> {
   const month = monthKey(ctx.clock.now());
@@ -49,6 +57,7 @@ export async function checkBudgets(ctx: Ctx, d: Dispatch, amountCents: number): 
   return out;
 }
 
+// EN CLAIR : Note dans l'audit le franchissement des seuils (50 %, 80 %, 100 %).
 export async function recordBudgetAlerts(ctx: Ctx, d: Dispatch, checks: BudgetCheck[]): Promise<void> {
   for (const c of checks) {
     for (const t of c.crossedThresholds) {

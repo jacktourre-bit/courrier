@@ -1,3 +1,9 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Fabrique la lettre en PDF (format A4) : expéditeur, destinataire placé pour la fenêtre de
+ * l'enveloppe, objet, corps, signature, liste des pièces jointes.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { PostalAddress, TemplateBlockContent } from "../domain/types.js";
 import { renderText } from "../domain/merge-fields.js";
@@ -67,6 +73,8 @@ export interface RenderInput {
   reference: string;
 }
 
+// EN CLAIR : Produit le PDF. Le même contenu donne toujours exactement le même fichier, donc la même
+// empreinte : on peut prouver ce qui a été approuvé.
 export async function renderFormalLetter(i: RenderInput): Promise<{ bytes: Uint8Array; pageCount: number }> {
   const doc = await PDFDocument.create();
   doc.setTitle(i.content.subject ? renderText(i.content.subject, i.values) : "Courrier");

@@ -1,3 +1,9 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Les règles de décision : quel niveau de sensibilité, quel prestataire, combien
+ * d'approbations, et quels droits a chaque rôle.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type {
   ApprovalStep,
   AttachmentCategory,
@@ -43,6 +49,9 @@ export interface SensitivityInput {
   purpose: Purpose;
 }
 
+// EN CLAIR : Donne le niveau de sensibilité d'un courrier en prenant le plus élevé de toutes les
+// sources : modèle, variables, pièces jointes, destinataire. Exemple : un patient qui écrit à la CPAM
+// = « santé », car le courrier révèle une relation de soin.
 /**
  * Classification conservatrice : le niveau retenu est le maximum de toutes les
  * sources. Un courrier concernant un patient et adressé à un organisme de
@@ -68,6 +77,7 @@ export function classifySensitivity(i: SensitivityInput): { level: Sensitivity; 
   return { level: maxSensitivity(...levels), reasons };
 }
 
+// EN CLAIR : Vrai si le courrier est « santé » ou « sensible » (NIR…).
 export const isSensitive = (s: Sensitivity): boolean => s === "health" || s === "personal_sensitive";
 
 // ------------------------------------------------------------------- Routage
@@ -80,6 +90,8 @@ export interface RoutingInput {
   needsProof: boolean;
 }
 
+// EN CLAIR : Choisit le prestataire, toujours côté serveur : manuscrit → Manuscry ; lettre formelle,
+// recommandé ou pièces jointes → Service Postal.
 /**
  * Routage serveur (§6). Pas de bascule silencieuse : si le prestataire choisi
  * est indisponible, l'envoi attend en file, il n'est jamais rerouté.
@@ -105,6 +117,9 @@ export interface RequiredStep {
   fourEyes: boolean;
 }
 
+// EN CLAIR : Calcule les étapes d'approbation obligatoires. Courrier administratif : 1 approbation par
+// une autre personne que l'auteur. Recommandé ou juridique : 2 étapes. Santé : 1 étape de plus,
+// réservée à une personne habilitée.
 export function approvalPolicyFor(d: Pick<Dispatch, "purpose" | "postageClass" | "sensitivity" | "sourceType">, preapprovedCampaign: boolean): {
   policy: Dispatch["approvalPolicy"];
   steps: RequiredStep[];

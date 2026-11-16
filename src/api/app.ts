@@ -1,3 +1,10 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * L'API interne : les « adresses » que l'écran (ou une autre application) appelle, par exemple
+ * POST /api/postal/dispatches pour créer un courrier. Chaque route vérifie l'identité, la
+ * société, les droits, puis appelle le service métier.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { z } from "zod";
@@ -76,6 +83,8 @@ function view(d: Dispatch) {
   return rest;
 }
 
+// EN CLAIR : Déclare toutes les routes. Exemples : créer un courrier, l'aperçu, approuver, annuler,
+// télécharger le dossier de preuves, recevoir les webhooks.
 export function createApi(o: ApiOptions) {
   const { deps } = o;
   const app = new Hono<Env>();

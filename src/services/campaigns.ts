@@ -1,3 +1,11 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Les campagnes, en particulier l'automate des anniversaires. Chaque jour, il regarde les
+ * anniversaires à venir et prépare une carte Manuscry pour les personnes qui ont donné leur
+ * accord, une seule fois par an. Il respecte le délai d'expédition (5 jours en France, 10 à
+ * l'étranger) et n'envoie jamais en retard.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { BirthdayRules, Campaign, CampaignRecipient, Dispatch, Purpose, RecipientAddress, Scope, Subject, TemplateVersion, Template } from "../domain/types.js";
 import { isDomestic } from "../domain/address.js";
 import { PostalError } from "../lib/errors.js";
@@ -20,6 +28,7 @@ export const MANUSCRY_LEAD_DAYS = { domestic: 5, international: 10 } as const;
 /** Marge de sécurité avant le délai prestataire. */
 export const SAFETY_MARGIN_DAYS = 2;
 
+// EN CLAIR : Crée une campagne liée à un modèle approuvé.
 export async function createCampaign(ctx: Ctx, i: { legalEntityId: string; centerId: string | null; type: Campaign["type"]; templateVersionId: string; purpose: Purpose; rules?: Partial<BirthdayRules>; budgetCents?: number | null }): Promise<Campaign> {
   requirePermission(ctx, "postal.campaign.manage");
   requireEntity(ctx, i.legalEntityId, i.centerId);
@@ -49,6 +58,8 @@ export async function createCampaign(ctx: Ctx, i: { legalEntityId: string; cente
   return c;
 }
 
+// EN CLAIR : Active la campagne (pas par son créateur). Pour les anniversaires, il faut d'abord
+// décider qui gère la répétition annuelle : nous ou Manuscry.
 export async function approveCampaign(ctx: Ctx, id: string): Promise<Campaign> {
   requirePermission(ctx, "postal.campaign.approve");
   const c = await ctx.db.one<Campaign>("postal_campaigns", { id });
@@ -69,6 +80,8 @@ export async function approveCampaign(ctx: Ctx, id: string): Promise<Campaign> {
   return { ...c, ...patch };
 }
 
+// EN CLAIR : Date de l'anniversaire pour une année donnée, avec le cas du 29 février (fêté le 28
+// février ou le 1er mars les années non bissextiles).
 /** Date d'anniversaire effective pour une année donnée (gestion du 29 février). */
 export function occurrenceFor(birthDate: string, year: number, policy: BirthdayRules["feb29Policy"]): string {
   const md = birthDate.slice(5, 10);
@@ -83,6 +96,9 @@ export interface BirthdayRunReport {
   skipped: Record<string, number>;
 }
 
+// EN CLAIR : L'automate quotidien : trouve les anniversaires dans la fenêtre, élimine les cas exclus
+// (opposition, mineur, décès, adresse trop ancienne, trop tard), et crée au plus une carte par
+// personne et par an.
 /**
  * Automate quotidien des anniversaires (§5.2). Pour chaque campagne active :
  * occurrences D telles que D - délai prestataire - marge ≥ aujourd'hui et D ≤ aujourd'hui + fenêtre.
@@ -197,6 +213,7 @@ export async function runBirthdayScheduler(deps: Deps, opts: { tenantId?: string
   return report;
 }
 
+// EN CLAIR : Estime combien de personnes recevraient une carte et le coût, sans rien envoyer.
 /** Simulation de campagne : effectif éligible et coût estimé, sans aucun appel prestataire. */
 export async function simulateBirthdayCampaign(ctx: Ctx, campaignId: string, unitCostTtcCents: number): Promise<{ eligibleNext365: number; estimatedCents: number }> {
   requirePermission(ctx, "postal.campaign.manage");

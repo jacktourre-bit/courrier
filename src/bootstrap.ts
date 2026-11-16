@@ -1,3 +1,9 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Assemble le module à partir de la configuration : base de données, stockage des fichiers
+ * (disque ou S3/OVH), adaptateurs des prestataires.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { configFromEnv } from "./config/flags.js";
 import { createLogger } from "./lib/logger.js";
 import { noScanner } from "./lib/files.js";
@@ -11,6 +17,7 @@ import { S3BlobStore } from "./store/s3.js";
 import { systemScope } from "./store/db.js";
 import type { Deps } from "./services/context.js";
 
+// EN CLAIR : Lit la configuration et prépare toutes les pièces du module.
 /** Assemblage des dépendances à partir de l'environnement (voir .env.example). */
 export function depsFromEnv(env: NodeJS.ProcessEnv = process.env): Deps {
   const config = configFromEnv(env);
@@ -36,6 +43,7 @@ export function depsFromEnv(env: NodeJS.ProcessEnv = process.env): Deps {
   };
 }
 
+// EN CLAIR : Choisit le rangement des fichiers : disque chiffré, ou stockage S3 (OVHcloud) chiffré.
 /** `POSTAL_BLOB_BACKEND=s3` : stockage objet compatible S3 (ex. OVHcloud Object Storage) ; sinon disque chiffré. */
 function blobStore(env: NodeJS.ProcessEnv, need: (k: string) => string): BlobStore {
   if (env.POSTAL_BLOB_BACKEND === "s3") {

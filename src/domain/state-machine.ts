@@ -1,3 +1,12 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Le « parcours de vie » d'un courrier. Un courrier passe par des étapes dans un ordre précis
+ * : BROUILLON → prêt pour aperçu → aperçu fait → en attente d'approbation → approuvé → envoyé
+ * au prestataire → en production → déposé à La Poste → en transit → distribué. Ce fichier
+ * interdit les sauts d'étape impossibles et empêche un statut de « reculer » quand une
+ * information arrive en retard.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { DispatchStatus } from "./types.js";
 import { PostalError } from "../lib/errors.js";
 
@@ -34,8 +43,10 @@ const T: Record<DispatchStatus, DispatchStatus[]> = {
   EVIDENCE_PENDING: [],
 };
 
+// EN CLAIR : Répond oui/non : a-t-on le droit de passer de l'étape A à l'étape B ?
 export const canTransition = (from: DispatchStatus, to: DispatchStatus): boolean => T[from].includes(to);
 
+// EN CLAIR : Même chose, mais arrête tout avec une erreur si le passage est interdit.
 export function assertTransition(from: DispatchStatus, to: DispatchStatus): void {
   if (!canTransition(from, to)) throw new PostalError("INVALID_TRANSITION", `Transition interdite ${from} -> ${to}`, { from, to });
 }
@@ -62,6 +73,8 @@ export interface ProviderStatusDecision {
   reason: "advanced" | "stale_or_equal" | "not_allowed" | "terminal" | "no_mapping";
 }
 
+// EN CLAIR : Reçoit un statut venant du prestataire et décide s'il fait avancer le courrier. Exemple :
+// si le courrier est déjà « distribué », un message « envoyé » arrivé en retard est ignoré.
 /**
  * Applique un statut prestataire déjà traduit. Ne régresse jamais :
  * un `letter_sent` reçu après `letter_delivered` est enregistré mais sans effet.

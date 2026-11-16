@@ -1,3 +1,12 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * Le traducteur vers Service Postal (imprimeur qui remet les plis à La Poste). Parcours : 1)
+ * prévisualisation (on envoie le PDF et l'adresse, on reçoit un identifiant UID, un aperçu et
+ * un prix) ; 2) validation de cet UID après approbation chez nous ; 3) suivi, puis
+ * récupération des preuves : PDF imprimé, preuve de dépôt, accusé de réception scanné. Les
+ * adresses et les champs viennent de leur documentation officielle (OpenAPI 1.7.0).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import type { DispatchStatus, EvidenceKind, PostalAddress, ProviderConnection } from "../../domain/types.js";
 import { isTracked } from "../../domain/types.js";
 import { SP_COUNTRY_NAMES, MAX_LINE } from "../../domain/address.js";
@@ -42,6 +51,8 @@ export const SP_INFO_STATUS: Record<string, DispatchStatus> = {
   depose: "POSTAL_DEPOSITED",
 };
 
+// EN CLAIR : Traduit un code de suivi Service Postal (ex. « distribue_destinataire ») en étape de
+// notre parcours (« DELIVERED »).
 /** `GET /lettres/{uid}/suivi` -> evenements[].code_statut */
 export function mapSuiviCode(code: string, type: string | null): DispatchStatus | null {
   switch (code) {
@@ -88,6 +99,8 @@ export interface ServicePostalAdapterOptions {
   skipDnsCheck?: boolean;
 }
 
+// EN CLAIR : Met une adresse au format Service Postal : 2 lignes maximum de 38 caractères, pays écrit
+// en toutes lettres.
 function spAddress(a: PostalAddress, kind: "dest" | "exp"): ProviderResult<Record<string, string>> {
   const lines = [a.service, a.line1, a.line2, a.line3].filter((l): l is string => !!l);
   if (lines.length > 2) return { ok: false, kind: "DEFINITIVE", message: "Service Postal n'accepte que 2 lignes d'adresse" };
@@ -197,6 +210,7 @@ export class ServicePostalAdapter implements PostalProviderAdapter {
     return ok(body);
   }
 
+  // EN CLAIR : Demande l'aperçu et le prix. Rien n'est imprimé à ce stade.
   async createPreview(conn: ProviderConnection, req: SubmissionRequest): Promise<ProviderResult<PreviewResult>> {
     const body = this.buildLetterBody(req);
     if (!body.ok) return body;
@@ -214,6 +228,7 @@ export class ServicePostalAdapter implements PostalProviderAdapter {
     });
   }
 
+  // EN CLAIR : Redemande le prix d'un courrier déjà prévisualisé.
   async quote(conn: ProviderConnection, ref: ProviderRef): Promise<ProviderResult<Quote>> {
     if (!ref.uid) return { ok: false, kind: "DEFINITIVE", message: "UID requis" };
     const r = await this.call<SpLetterResponse>(conn, "GET", `/lettres/${encodeURIComponent(ref.uid)}/prix`, undefined, false);
@@ -222,6 +237,8 @@ export class ServicePostalAdapter implements PostalProviderAdapter {
     return q ? ok(q) : { ok: false, kind: "DEFINITIVE", message: "Prix absent" };
   }
 
+  // EN CLAIR : Valide l'UID prévisualisé : c'est à ce moment que le courrier part en production. L'envoi
+  // direct sans aperçu est volontairement interdit.
   async submit(conn: ProviderConnection, req: SubmissionRequest, ref: ProviderRef): Promise<ProviderResult<SubmitResult>> {
     // Envoi immédiat (POST /lettres) volontairement non exposé : prévisualisation + validation obligatoires.
     if (!ref.uid) return { ok: false, kind: "DEFINITIVE", message: "Prévisualisation requise avant validation" };
@@ -240,6 +257,7 @@ export class ServicePostalAdapter implements PostalProviderAdapter {
     return unsupported<{ effectiveAt: string | null }>("Validation de lettre générée");
   }
 
+  // EN CLAIR : Demande l'annulation. On n'affiche « annulé » que si Service Postal confirme.
   async cancel(conn: ProviderConnection, ref: ProviderRef) {
     if (!ref.uid) return { ok: false as const, kind: "DEFINITIVE" as const, message: "UID requis" };
     const r = await this.call<{ code?: number; message?: string; uid?: string }>(conn, "DELETE", `/lettres/${encodeURIComponent(ref.uid)}/annuler`, undefined, false);
@@ -252,6 +270,8 @@ export class ServicePostalAdapter implements PostalProviderAdapter {
     return ok({ cancelled, message: (r.value?.message ?? "").slice(0, 160) });
   }
 
+  // EN CLAIR : Interroge Service Postal sur l'état réel du courrier et dit quelles preuves sont
+  // disponibles. La preuve de dépôt n'est réclamée qu'après la prise en charge par La Poste.
   async getStatus(conn: ProviderConnection, ref: ProviderRef): Promise<ProviderResult<StatusResult>> {
     if (!ref.uid) return { ok: false, kind: "DEFINITIVE", message: "UID requis" };
     const uid = encodeURIComponent(ref.uid);
@@ -300,6 +320,7 @@ export class ServicePostalAdapter implements PostalProviderAdapter {
     return ok({ ref, rawStatus: statut, mappedStatus: mapped, events, trackingNumber: tracking, evidenceAvailable, rawTracking });
   }
 
+  // EN CLAIR : Télécharge une preuve : PDF imprimé, preuve de dépôt ou AR scanné.
   async fetchEvidence(conn: ProviderConnection, ref: ProviderRef, kind: EvidenceKind): Promise<ProviderResult<EvidenceResult>> {
     if (!ref.uid) return { ok: false, kind: "DEFINITIVE", message: "UID requis" };
     const uid = encodeURIComponent(ref.uid);
@@ -337,6 +358,8 @@ export class ServicePostalAdapter implements PostalProviderAdapter {
     }
   }
 
+  // EN CLAIR : Lit une notification de Service Postal pour savoir quel courrier est concerné. On ne
+  // croit pas son contenu : on va revérifier l'état via l'API.
   handleWebhook(rawBody: string): ProviderResult<ParsedWebhook> {
     // Format non publié : on n'extrait que l'UID, l'état sera relu via l'API.
     let p: Record<string, unknown>;

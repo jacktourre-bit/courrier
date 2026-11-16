@@ -1,3 +1,9 @@
+/*
+ * ════════════════════════════════ EN CLAIR ════════════════════════════════
+ * La forme exacte des données acceptées par l'API. Tout champ inconnu ou mal formé est refusé
+ * avant d'arriver au métier.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { z } from "zod";
 import { ATTACHMENT_CATEGORIES, POSTAGE_CLASSES, PROVIDERS, PURPOSES, SENSITIVITIES, DISPATCH_STATUSES } from "../domain/types.js";
 import { ROLES } from "../domain/policy.js";
