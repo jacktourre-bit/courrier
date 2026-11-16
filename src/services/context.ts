@@ -119,6 +119,7 @@ export interface Asset {
   retentionPolicy: string;
   createdBy: string | null;
   createdAt: string;
+  purgedAt: string | null;
 }
 
 export async function storeAsset(
@@ -139,13 +140,22 @@ export async function storeAsset(
     retentionPolicy: a.retentionPolicy ?? "to_define_by_dpo",
     createdBy: ctx.scope.userId,
     createdAt: nowIso(ctx),
+    purgedAt: null,
   });
 }
 
 export async function readAsset(ctx: Deps & { scope: Scope }, assetId: string): Promise<{ asset: Asset; bytes: Uint8Array }> {
   const asset = await ctx.db.one<Asset>("postal_assets", { id: assetId });
   if (!asset) throw new PostalError("NOT_FOUND", "Pièce introuvable");
+  if (asset.purgedAt) throw new PostalError("NOT_FOUND", "Pièce purgée (durée de conservation écoulée) ; empreinte SHA-256 conservée");
   const bytes = await ctx.blobs.get(asset.storageKey);
   if (sha256(bytes) !== asset.sha256) throw new PostalError("CONFLICT", "Intégrité de la pièce compromise");
   return { asset, bytes };
+}
+
+/** Lecture d'un contenu sensible/santé : permission nominative obligatoire (P4). */
+export function requireSensitiveRead(ctx: Ctx, sensitivity: Sensitivity): void {
+  if ((sensitivity === "health" || sensitivity === "personal_sensitive") && !ctx.permissions.has("postal.sensitive.read")) {
+    throw new PostalError("FORBIDDEN", "Contenu sensible : permission nominative postal.sensitive.read requise");
+  }
 }

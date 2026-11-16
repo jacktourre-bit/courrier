@@ -54,6 +54,8 @@ Codes d'erreur : `FORBIDDEN`, `NOT_FOUND`, `VALIDATION`, `COMPLIANCE_BLOCKED` (a
 | POST | `/sender-profiles` | config.manage | Profils expéditeur |
 | POST | `/budgets` | config.manage | Budgets |
 | POST | `/sensitive-authorizations` | **postal.sensitive.authorize** (DPO, MFA) | Autorisation documentée par prestataire, modèle et société |
+| POST | `/sensitive-authorizations/{id}/revoke` | postal.sensitive.authorize | Révocation motivée |
+| POST | `/retention-policies` | **postal.retention.manage** | Durée de conservation par type d'actif |
 | GET | `/tasks` ; POST `/tasks/{id}/close` | read / approve | « À valider » et incidents |
 | GET | `/dashboard` | postal.read | Tableau de bord |
 | GET | `/audit` | postal.audit.read | Journal d'audit |
@@ -70,4 +72,6 @@ Codes d'erreur : `FORBIDDEN`, `NOT_FOUND`, `VALIDATION`, `COMPLIANCE_BLOCKED` (a
 | administrateur | configuration (avec MFA), annuaire, audit |
 | audit | lecture, audit, preuves |
 
-`postal.approve_sensitive` et `postal.sensitive.authorize` ne sont attribuées par **aucun** rôle. Elles s'accordent nominativement, après validation DPO.
+Ne sont attribuées par **aucun** rôle et s'accordent nominativement, après validation DPO : `postal.sensitive.authorize`, `postal.approve_sensitive`, `postal.sensitive.enter`, `postal.sensitive.attach`, `postal.sensitive.read`, `postal.retention.manage`.
+
+Courrier sensible (`POST /dispatches`) : `sensitive_values` (ex. `{"patient.nir": "…"}`) et `attachments[].justification` pour chaque pièce médicale.

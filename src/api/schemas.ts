@@ -37,9 +37,10 @@ export const CreateDispatchSchema = z
     scheduled_for: isoDate.nullable().optional(),
     event_key: z.string().max(80).nullable().optional(),
     attachments: z
-      .array(z.object({ asset_id: id, filename: z.string().min(1).max(200), category: z.enum(ATTACHMENT_CATEGORIES), sensitivity: z.enum(SENSITIVITIES) }).strict())
+      .array(z.object({ asset_id: id, filename: z.string().min(1).max(200), category: z.enum(ATTACHMENT_CATEGORIES), sensitivity: z.enum(SENSITIVITIES), justification: z.string().max(500).nullish() }).strict())
       .max(10)
       .optional(),
+    sensitive_values: z.record(z.string().max(60), z.string().max(300)).optional(),
   })
   .strict();
 
@@ -171,7 +172,24 @@ export const BudgetSchema = z
   .strict();
 
 export const SensitiveAuthSchema = z
-  .object({ legal_entity_id: id, provider: z.enum(PROVIDERS), template_id: id, document_ref: z.string().min(3).max(200), expires_at: z.iso.datetime().nullable() })
+  .object({
+    legal_entity_id: id,
+    provider: z.enum(PROVIDERS),
+    template_id: id,
+    document_ref: z.string().min(3).max(200),
+    dpa_ref: z.string().min(3).max(200),
+    qualification: z.enum(["hds_certified", "hds_out_of_scope_justified"]),
+    certificate_ref: z.string().max(200).nullable(),
+    certificate_scope: z.string().max(300).nullable(),
+    certificate_expires_at: z.iso.datetime().nullable(),
+    allowed_attachment_categories: z.array(z.enum(ATTACHMENT_CATEGORIES)).max(20),
+    allowed_recipient_categories: z.array(z.enum(["cpam", "mdph", "mutuelle", "caisse", "assureur", "public", "autre"])).min(1).max(10),
+    expires_at: z.iso.datetime().nullable(),
+  })
+  .strict();
+
+export const RetentionSchema = z
+  .object({ legal_entity_id: id, asset_kind: z.string().min(3).max(60), retain_days: z.number().int().min(1).max(36500), legal_basis: z.string().min(3).max(300) })
   .strict();
 
 export const CampaignSchema = z

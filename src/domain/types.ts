@@ -279,6 +279,9 @@ export interface Attachment {
   category: AttachmentCategory;
   pageCount: number | null;
   orderIndex: number;
+  /** Pièce sensible : justification « indispensable » saisie par l'utilisateur habilité (§5.4.3). */
+  justification: string | null;
+  addedBy: string | null;
 }
 
 export const ATTACHMENT_CATEGORIES = [
@@ -426,14 +429,45 @@ export interface Budget {
   alertThresholds: number[];
 }
 
+/**
+ * Autorisation d'envoi de données sensibles/santé (P4, §13.2). Elle trace la
+ * qualification du traitement chez le prestataire et borne strictement ce qui
+ * peut lui être transmis.
+ */
 export interface SensitiveAuthorization {
   id: string;
   tenantId: string;
   legalEntityId: string;
   provider: ProviderName;
   templateId: string;
+  /** Référence de l'analyse DPO (finalité, base légale, secret professionnel). */
   documentRef: string;
+  /** Contrat de sous-traitance RGPD art. 28 signé avec le prestataire. */
+  dpaRef: string;
+  /** `hds_certified` : certificat HDS vérifié ; `hds_out_of_scope_justified` : hors champ HDS, justifié par écrit. */
+  qualification: "hds_certified" | "hds_out_of_scope_justified";
+  certificateRef: string | null;
+  /** Activités HDS couvertes par le certificat, telles qu'indiquées sur le certificat. */
+  certificateScope: string | null;
+  certificateExpiresAt: string | null;
+  /** Catégories de pièces autorisées (vide = aucune pièce de santé). */
+  allowedAttachmentCategoriesJson: AttachmentCategory[];
+  /** Catégories d'organismes destinataires autorisées (ex. cpam, mdph). */
+  allowedRecipientCategoriesJson: string[];
   validatedBy: string;
   validatedAt: string;
   expiresAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface RetentionPolicy {
+  id: string;
+  tenantId: string;
+  legalEntityId: string;
+  /** Type d'actif visé (generated_document, provider_preview, evidence_deposit_proof, webhook_payload…). */
+  assetKind: string;
+  retainDays: number;
+  legalBasis: string;
+  createdBy: string;
+  createdAt: string;
 }

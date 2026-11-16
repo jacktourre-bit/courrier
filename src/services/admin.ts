@@ -142,13 +142,44 @@ export async function setBudget(ctx: Ctx, b: Omit<Budget, "tenantId" | "id">): P
   return row;
 }
 
-/** Autorisation d'envoi sensible : réservée au DPO / responsable conformité (§13.2). */
-export async function grantSensitiveAuthorization(ctx: Ctx, a: Omit<SensitiveAuthorization, "id" | "tenantId" | "validatedBy" | "validatedAt">): Promise<SensitiveAuthorization> {
+/**
+ * Autorisation d'envoi sensible : réservée au DPO / responsable conformité, avec MFA (§13.2).
+ * Exige la référence de l'analyse DPO et du DPA ; pour `hds_certified`, le certificat,
+ * ses activités couvertes et sa date de fin de validité.
+ */
+export async function grantSensitiveAuthorization(
+  ctx: Ctx,
+  a: Omit<SensitiveAuthorization, "id" | "tenantId" | "validatedBy" | "validatedAt" | "revokedAt">,
+): Promise<SensitiveAuthorization> {
   requirePermission(ctx, "postal.sensitive.authorize");
   requireEntity(ctx, a.legalEntityId);
-  if (!a.documentRef || a.documentRef.length < 3) throw new PostalError("VALIDATION", "Référence du document d'analyse (DPA/HDS) requise");
-  const row: SensitiveAuthorization = { ...a, id: uuid(), tenantId: ctx.scope.tenantId, validatedBy: ctx.scope.userId!, validatedAt: nowIso(ctx) };
+  const ref = (x: string | null | undefined) => !!x && x.trim().length >= 3;
+  if (!ref(a.documentRef)) throw new PostalError("VALIDATION", "Référence de l'analyse DPO requise");
+  if (!ref(a.dpaRef)) throw new PostalError("VALIDATION", "Référence du contrat de sous-traitance (DPA art. 28) requise");
+  if (a.provider === "manuscry") throw new PostalError("VALIDATION", "Aucune donnée sensible n'est autorisée vers Manuscry");
+  if (a.qualification === "hds_certified") {
+    if (!ref(a.certificateRef) || !ref(a.certificateScope) || !a.certificateExpiresAt) throw new PostalError("VALIDATION", "Certificat HDS : référence, activités couvertes et date d'expiration requises");
+    if (a.certificateExpiresAt <= nowIso(ctx)) throw new PostalError("VALIDATION", "Certificat HDS expiré");
+  }
+  const t = await ctx.db.one<{ id: string; legalEntityId: string; provider: string }>("postal_templates", { id: a.templateId });
+  if (!t || t.legalEntityId !== a.legalEntityId || t.provider !== a.provider) throw new PostalError("VALIDATION", "Modèle inconnu ou d'un autre prestataire");
+  const row: SensitiveAuthorization = { ...a, id: uuid(), tenantId: ctx.scope.tenantId, validatedBy: ctx.scope.userId!, validatedAt: nowIso(ctx), revokedAt: null };
   await ctx.db.insert("postal_sensitive_authorizations", row);
-  await audit(ctx, { legalEntityId: a.legalEntityId, action: "sensitive_authorization.granted", objectType: "template", objectId: a.templateId, metadata: { provider: a.provider, documentRef: a.documentRef } });
+  await audit(ctx, {
+    legalEntityId: a.legalEntityId,
+    action: "sensitive_authorization.granted",
+    objectType: "template",
+    objectId: a.templateId,
+    metadata: { provider: a.provider, qualification: a.qualification, documentRef: a.documentRef, dpaRef: a.dpaRef, certificateRef: a.certificateRef, certificateExpiresAt: a.certificateExpiresAt, categories: a.allowedAttachmentCategoriesJson, recipients: a.allowedRecipientCategoriesJson },
+  });
   return row;
+}
+
+export async function revokeSensitiveAuthorization(ctx: Ctx, id: string, reason: string): Promise<void> {
+  requirePermission(ctx, "postal.sensitive.authorize");
+  const a = await ctx.db.one<SensitiveAuthorization>("postal_sensitive_authorizations", { id });
+  if (!a) throw new PostalError("NOT_FOUND", "Autorisation introuvable");
+  requireEntity(ctx, a.legalEntityId);
+  await ctx.db.update("postal_sensitive_authorizations", { id }, { revokedAt: nowIso(ctx) });
+  await audit(ctx, { legalEntityId: a.legalEntityId, action: "sensitive_authorization.revoked", objectType: "template", objectId: a.templateId, metadata: { reason } });
 }

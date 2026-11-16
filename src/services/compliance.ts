@@ -14,6 +14,9 @@ import type {
 import { validateAddress } from "../domain/address.js";
 import { isSensitive } from "../domain/policy.js";
 import { daysBetween } from "../lib/util.js";
+import { detectHealthTerms } from "../domain/merge-fields.js";
+
+const HEALTH_CATEGORIES = ["medical_report", "audiogram", "prescription", "certificate", "mdph_file", "identity"];
 
 /**
  * Moteur Compliance (§5.1). Fonction pure : toutes les données sont chargées
@@ -45,6 +48,8 @@ export interface ComplianceInput {
   sensitiveFlag: boolean;
   sensitiveAuthorization: SensitiveAuthorization | null;
   automated: boolean;
+  /** Catégories des pièces jointes (contrôle du périmètre de l'autorisation sensible). */
+  attachmentCategories?: string[];
   allowMinors: boolean;
   addressMaxAgeDays: number | null;
   today: string;
@@ -125,8 +130,23 @@ export function evaluateCompliance(i: ComplianceInput): { allowed: boolean; bloc
   if (isSensitive(i.sensitivity)) {
     if (!i.sensitiveFlag) add("sensitive_flag_off", "Données sensibles/santé : envoi externe interdit (SENSITIVE_POSTAL_ALLOWED désactivé)");
     else if (!i.sensitiveAuthorization) add("sensitive_not_authorized", "Aucune autorisation documentée pour ce prestataire, ce modèle et cette entité");
-    else if (i.sensitiveAuthorization.expiresAt && i.sensitiveAuthorization.expiresAt.slice(0, 10) < i.today) add("sensitive_authorization_expired", "Autorisation sensible expirée");
+    else {
+      const a = i.sensitiveAuthorization;
+      if (a.revokedAt) add("sensitive_authorization_revoked", "Autorisation sensible révoquée");
+      if (a.expiresAt && a.expiresAt.slice(0, 10) < i.today) add("sensitive_authorization_expired", "Autorisation sensible expirée");
+      if (a.qualification === "hds_certified" && (!a.certificateExpiresAt || a.certificateExpiresAt.slice(0, 10) < i.today)) add("sensitive_certificate_expired", "Certificat HDS du prestataire expiré : envoi suspendu");
+      const allowedCats = a.allowedAttachmentCategoriesJson ?? [];
+      const outside = (i.attachmentCategories ?? []).filter((c) => HEALTH_CATEGORIES.includes(c) && !allowedCats.includes(c as never));
+      if (outside.length) add("sensitive_attachment_not_authorized", `Pièce(s) hors du périmètre autorisé : ${[...new Set(outside)].join(", ")}`);
+      const orgCat = i.organization?.category ?? null;
+      if (orgCat && !(a.allowedRecipientCategoriesJson ?? []).includes(orgCat)) add("sensitive_recipient_not_authorized", `Organisme ${orgCat} hors du périmètre autorisé`);
+      if (!i.organization) add("sensitive_recipient_not_organization", "Données de santé : envoi postal limité aux organismes autorisés");
+    }
     if (i.provider === "manuscry") add("sensitive_manuscry", "Aucune donnée sensible vers Manuscry");
+    // Secret professionnel : l'enveloppe ne doit pas révéler une relation de soin.
+    const shown = i.sender?.envelopeDisplayName;
+    if (!shown) add("envelope_not_discreet", "Nom d'expéditeur discret (envelopeDisplayName) requis pour un courrier sensible");
+    else if (detectHealthTerms(shown).length || /audi|acoust|optic|optiq|lunett|vision|prothes/i.test(shown)) add("envelope_not_discreet", "Le nom affiché sur l'enveloppe révèle une activité de santé");
   }
 
   return { allowed: b.length === 0, blockers: b, warnings: w };

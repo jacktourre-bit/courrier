@@ -250,7 +250,11 @@ describe("Service Postal — parcours administratif", () => {
       purpose: "administrative" as const, templateVersionId: s.formalVersionId, postageClass: "ecopli" as const,
     };
     await expect(createDispatch(agent(), { ...input, idempotencyKey: idem() })).rejects.toMatchObject({ code: "SENSITIVE_BLOCKED" });
-    await grantSensitiveAuthorization(h.as("dpo", [], LE_A, ["postal.sensitive.authorize"]), { legalEntityId: LE_A, provider: "servicepostal", templateId: s.formalTemplateId, documentRef: "DPA-SP-2026-01 + analyse HDS", expiresAt: null });
+    await grantSensitiveAuthorization(h.as("dpo", [], LE_A, ["postal.sensitive.authorize"]), {
+      legalEntityId: LE_A, provider: "servicepostal", templateId: s.formalTemplateId, documentRef: "AIPD-2026-03", dpaRef: "DPA-SP-2026-01",
+      qualification: "hds_certified", certificateRef: "CERT-HDS-TEST", certificateScope: "activités 1 à 6 (test)", certificateExpiresAt: "2028-01-01T00:00:00Z",
+      allowedAttachmentCategoriesJson: [], allowedRecipientCategoriesJson: ["cpam"], expiresAt: null,
+    });
     let d = await createDispatch(agent(), { ...input, idempotencyKey: idem() });
     expect(d.sensitivity).toBe("health");
     d = await previewDispatch(agent(), d.id);
@@ -260,7 +264,7 @@ describe("Service Postal — parcours administratif", () => {
     await expect(approveDispatch(direction(), d.id)).rejects.toThrow(/approve_sensitive/);
     d = await approveDispatch(h.as("dpo-approver", [], LE_A, ["postal.read", "postal.approve_sensitive"]), d.id);
     expect(d.status).toBe("APPROVED");
-    const exp = await exportDocument(direction(), d.id);
+    const exp = await exportDocument(h.as("director", ["direction"], LE_A, ["postal.sensitive.read"]), d.id);
     expect(Buffer.from(exp.bytes.slice(0, 5)).toString()).toBe("%PDF-");
   });
 

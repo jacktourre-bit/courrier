@@ -15,7 +15,7 @@ Le SaaS reste la source de vérité. Les prestataires ne reçoivent que le minim
 | **P1** Service Postal administratif non médical | ✅ Rendu PDF, pièces jointes, prévisualisation, prix, double validation, envoi, suivi, preuves, annulation |
 | **P2** Manuscry relationnel | ✅ Champs de campagne lus via l'API, anniversaires (29 février, délais J-5/J-10, anti-doublon), suivi, webhooks, blocage sur opposition |
 | **P3** Publipostage, tableaux de bord avancés, IA | ⏳ Non fait. Budgets et tableau de bord de base présents. |
-| **P4** Courriers de santé (CPAM/MDPH…) | 🔒 Verrouillés. Il faut `SENSITIVE_POSTAL_ALLOWED`, une autorisation documentée par prestataire, modèle et société, et une approbation dédiée. Sans cela, seul l'export sécurisé est possible. |
+| **P4** Courriers de santé (CPAM/MDPH…) | ✅ Code livré, **désactivé par défaut**. Autorisation DPA/HDS par prestataire, modèle et société ; saisie NIR chiffrée ; pièces justifiées ; enveloppe discrète ; approbation dédiée ; lecture nominative ; purge de conservation. Activation après audits : [`docs/p4-hds.md`](docs/p4-hds.md). |
 | Interface utilisateur | ⏳ Non faite. L'API interne est prête à être consommée ([`docs/api-interne.md`](docs/api-interne.md)). |
 
 ## Architecture
@@ -28,6 +28,8 @@ API interne (Hono, Zod strict, RBAC par société, idempotence)
 webhooks (jeton secret) ─► déduplication ─► relecture via l'API (jamais de statut lu dans le payload)
 stockage : PostgreSQL (RLS) + blobs chiffrés AES-256-GCM
 ```
+
+Stockage : disque chiffré ou stockage objet compatible S3 (OVHcloud Object Storage), chiffrement côté application dans les deux cas.
 
 | Dossier | Contenu |
 |---|---|

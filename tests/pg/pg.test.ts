@@ -7,6 +7,9 @@ import { harness, idem, seed, LE_A, LE_B, T } from "../helpers.js";
 import { approveDispatch, createDispatch, getDispatch, previewDispatch, requestApproval } from "../../src/services/dispatch-service.js";
 import { runOutboxOnce } from "../../src/services/worker.js";
 import { runBirthdayScheduler, createCampaign, approveCampaign } from "../../src/services/campaigns.js";
+import { grantSensitiveAuthorization } from "../../src/services/admin.js";
+import { addTemplateVersion, approveTemplateVersion, createTemplate } from "../../src/services/templates.js";
+import { runRetentionPurge, setRetentionPolicy } from "../../src/services/retention.js";
 import type { Dispatch } from "../../src/domain/types.js";
 
 /**
@@ -22,7 +25,7 @@ describe.skipIf(!enabled)("PostgreSQL", () => {
   beforeAll(async () => {
     for (let i = 0; i < 5; i++) await migrate(ADMIN, { down: true }).catch(() => {});
     const applied = await migrate(ADMIN, { appRole: "postal_app" });
-    expect(applied).toEqual(["0001_postal_module.up.sql", "0002_webhook_payloads.up.sql"]);
+    expect(applied).toEqual(["0001_postal_module.up.sql", "0002_webhook_payloads.up.sql", "0003_p4_sensitive.up.sql"]);
     pool = new pg.Pool({ connectionString: APP });
   });
   afterAll(async () => {
@@ -82,8 +85,7 @@ describe.skipIf(!enabled)("PostgreSQL", () => {
     await admin.connect();
     await admin.query("TRUNCATE postal_campaign_recipients, postal_outbox, postal_events, postal_attachments, postal_evidence, postal_approvals, postal_dispatches CASCADE").catch(async () => {
       // tables immuables : on repart d'un schéma neuf
-      await migrate(ADMIN, { down: true });
-      await migrate(ADMIN, { down: true });
+      for (let i = 0; i < 3; i++) await migrate(ADMIN, { down: true });
       await migrate(ADMIN, { appRole: "postal_app" });
     });
     await admin.end();
@@ -101,7 +103,37 @@ describe.skipIf(!enabled)("PostgreSQL", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("P4 sur PostgreSQL : autorisation HDS, saisie NIR chiffrée, pièce justifiée, purge", async () => {
+    const LE = "00000000-0000-4000-8000-0000000000a7";
+    const h = harness({ SENSITIVE_POSTAL_ALLOWED: true }, new PgDb(pool, systemScope()));
+    const s = await seed(h, { le: LE });
+    const admin = h.as("admin", ["manager"], LE);
+    const t = await createTemplate(admin, { legalEntityId: LE, type: "formal", provider: "servicepostal", purpose: "administrative", title: "CPAM" });
+    const v = await addTemplateVersion(admin, t.id, { allowedMergeFields: ["patient.nir"], content: { body: "NIR {{patient.nir}}" }, declaredSensitivity: "health" });
+    await approveTemplateVersion(h.as("director", ["direction"], LE), v.id);
+    const dpo = h.as("dpo", [], LE, ["postal.read", "postal.sensitive.authorize", "postal.approve_sensitive", "postal.retention.manage"]);
+    await grantSensitiveAuthorization(dpo, { legalEntityId: LE, provider: "servicepostal", templateId: t.id, documentRef: "AIPD", dpaRef: "DPA", qualification: "hds_certified", certificateRef: "CERT-1", certificateScope: "activités 1 à 6", certificateExpiresAt: "2028-01-01T00:00:00Z", allowedAttachmentCategoriesJson: ["audiogram"], allowedRecipientCategoriesJson: ["cpam"], expiresAt: null });
+    const body = "1850578006084";
+    const nir = body + String(97 - Number(BigInt(body) % 97n)).padStart(2, "0");
+    const agent = h.as("agent", ["assistante"], LE, ["postal.sensitive.enter"]);
+    let d = await createDispatch(agent, { legalEntityId: LE, centerId: null, sourceType: "patient_file", sourceId: null, subject: { type: "patient", id: s.patientId }, recipient: { organizationId: s.publicOrgId }, purpose: "administrative", templateVersionId: v.id, postageClass: "ecopli", idempotencyKey: idem(), sensitiveValues: { "patient.nir": nir } });
+    d = await previewDispatch(agent, d.id);
+    d = await requestApproval(agent, d.id);
+    d = await approveDispatch(h.as("manager", ["manager"], LE), d.id);
+    d = await approveDispatch(dpo, d.id);
+    expect(d.status).toBe("APPROVED");
+    const c = new pg.Client({ connectionString: ADMIN });
+    await c.connect();
+    const dump = await c.query("SELECT row_to_json(x)::text t FROM postal_dispatches x UNION ALL SELECT row_to_json(y)::text FROM postal_audit_logs y");
+    expect(dump.rows.map((r) => r.t).join("")).not.toContain(nir);
+    await c.end();
+    await setRetentionPolicy(dpo, { legalEntityId: LE, assetKind: "provider_preview", retainDays: 1, legalBasis: "test" });
+    h.clock.advance(2 * 86_400_000);
+    expect((await runRetentionPurge(h.deps)).skippedInUse).toBe(1);
+  });
+
   it("migration réversible", async () => {
+    expect(await migrate(ADMIN, { down: true })).toEqual(["down:0003_p4_sensitive.up.sql"]);
     expect(await migrate(ADMIN, { down: true })).toEqual(["down:0002_webhook_payloads.up.sql"]);
     expect(await migrate(ADMIN, { down: true })).toEqual(["down:0001_postal_module.up.sql"]);
     const c = new pg.Client({ connectionString: ADMIN });

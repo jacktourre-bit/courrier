@@ -27,7 +27,7 @@ import { isRegistered, isTracked } from "../domain/types.js";
 import { assertTransition, PRE_SUBMISSION } from "../domain/state-machine.js";
 import { normalizeAddress } from "../domain/address.js";
 import { approvalPolicyFor, classifySensitivity, routeProvider } from "../domain/policy.js";
-import { resolveMergeValues } from "../domain/merge-fields.js";
+import { fieldCategory, resolveMergeValues, validateSensitiveValues } from "../domain/merge-fields.js";
 import { PostalError } from "../lib/errors.js";
 import { canonicalHash, opaqueRef, parisDate, sha256, uuid } from "../lib/util.js";
 import { safeDownload } from "../lib/safe-fetch.js";
@@ -53,7 +53,9 @@ export interface CreateDispatchInput {
   options?: Dispatch["optionsJson"];
   scheduledFor?: string | null;
   eventKey?: string | null;
-  attachments?: { assetId: string; filename: string; category: AttachmentCategory; sensitivity: Sensitivity }[];
+  attachments?: { assetId: string; filename: string; category: AttachmentCategory; sensitivity: Sensitivity; justification?: string | null }[];
+  /** P4 : valeurs sensibles (NIR, données de santé) saisies par un utilisateur habilité pour ce courrier. */
+  sensitiveValues?: Record<string, string>;
   idempotencyKey: string;
   campaignId?: string | null;
   automated?: boolean;
@@ -110,6 +112,7 @@ function buildCompliance(ctx: Deps & { scope: Scope }, d: Pick<Dispatch, "purpos
   allowMinors: boolean;
   requireExplicitOptIn: boolean;
 }) {
+  const attachmentCategories = l.attachments.map((a) => a.category);
   const address = l.organization ? orgAsAddress(l.organization) : l.address;
   // Un organisme public partagé (legalEntityId null) est utilisable par toute entité du tenant.
   if (address && l.organization && !l.organization.legalEntityId) address.legalEntityId = d.legalEntityId;
@@ -132,6 +135,7 @@ function buildCompliance(ctx: Deps & { scope: Scope }, d: Pick<Dispatch, "purpos
     sensitiveFlag: ctx.config.flags.SENSITIVE_POSTAL_ALLOWED,
     sensitiveAuthorization: l.authorization,
     automated: extra.automated,
+    attachmentCategories,
     allowMinors: extra.allowMinors,
     addressMaxAgeDays: extra.addressMaxAgeDays,
     today: parisDate(ctx.clock.now()),
@@ -244,6 +248,12 @@ export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Prom
   const recipient = normalizeAddress(recipientAddr.addressJson);
 
   const allowed = l.version!.allowedMergeFieldsJson;
+  const sensBase = {
+    declared: "public" as Sensitivity,
+    subjectType: input.subject.type,
+    concernsPatient: input.subject.type === "patient" || l.subject?.type === "patient",
+    purpose: input.purpose,
+  };
   const sens = classifySensitivity({
     declared: l.version!.declaredSensitivity,
     mergeFieldKeys: allowed,
@@ -279,6 +289,22 @@ export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Prom
   });
   throwIfBlocked(comp.blockers);
 
+  // Pièces sensibles : choix explicite et justifié par un utilisateur habilité (§5.4.3).
+  for (const a of input.attachments ?? []) {
+    const level = classifySensitivity({ ...sensBase, attachments: [{ category: a.category, declared: a.sensitivity }], mergeFieldKeys: [], recipientOrgCategory: null, freeTexts: [] }).level;
+    if (level === "health" || level === "personal_sensitive") {
+      requirePermission(ctx, "postal.sensitive.attach");
+      if (!a.justification || a.justification.trim().length < 10) throw new PostalError("VALIDATION", `Justification requise pour la pièce sensible « ${a.filename.slice(0, 60)} » (pourquoi est-elle indispensable ?)`);
+    }
+  }
+  // Valeurs sensibles : saisies, jamais déduites du dossier ; stockées chiffrées hors de la base.
+  const hasSensitiveFields = allowed.some((k) => ["health", "sensitive"].includes(fieldCategory(k) ?? ""));
+  let sensitiveValues: Record<string, string> | null = null;
+  if (hasSensitiveFields || input.sensitiveValues) {
+    requirePermission(ctx, "postal.sensitive.enter");
+    sensitiveValues = validateSensitiveValues(allowed, input.sensitiveValues ?? {});
+  }
+
   // Valeurs de fusion (erreur bloquante si une valeur manque)
   const values = resolveMergeValues(allowed, {
     subject: l.subject,
@@ -286,8 +312,10 @@ export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Prom
     center: l.sender ? { name: l.sender.businessName, phone: l.sender.contact, address: [l.sender.postalAddressJson.line1, `${l.sender.postalAddressJson.postalCode} ${l.sender.postalAddressJson.city}`].join(", ") } : null,
     sender: { businessName: l.sender?.businessName ?? "", signatory: l.version!.contentJson.signatureName ?? null },
     today: parisDate(ctx.clock.now()),
-  });
-
+  }, { skipSensitive: true });
+  const sensitiveAsset = sensitiveValues
+    ? await storeAsset(ctx, { tenantId: ctx.scope.tenantId, legalEntityId: input.legalEntityId, bytes: new TextEncoder().encode(JSON.stringify(sensitiveValues)), mimeType: "application/json", sensitivity: "health", kind: "sensitive_values" })
+    : null;
 
   const now = nowIso(ctx);
   const sender = l.sender!;
@@ -328,6 +356,7 @@ export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Prom
       ...(input.requiredPreference ? { requiredPreference: input.requiredPreference } : {}),
       ...(input.birthdayDate ? { birthdayDate: input.birthdayDate } : {}),
       sensitivityReasons: sens.reasons,
+      ...(sensitiveAsset ? { sensitiveValuesAssetId: sensitiveAsset.id } : {}),
       addressVersion: recipientAddr.version,
     } as Dispatch["optionsJson"],
     approvalPolicy: approvalPolicyFor({ purpose: input.purpose, postageClass: input.postageClass, sensitivity: sens.level, sourceType: input.sourceType }, !!input.automated && !!input.campaignId).policy,
@@ -375,7 +404,10 @@ export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Prom
         category: a.category,
         pageCount: null,
         orderIndex: i++,
+        justification: a.justification?.trim().slice(0, 500) ?? null,
+        addedBy: ctx.scope.userId,
       });
+      if (a.justification) await audit(tctx, { legalEntityId: d.legalEntityId, action: "dispatch.sensitive_attachment_added", objectType: "dispatch", objectId: d.id, metadata: { category: a.category, justification: a.justification.slice(0, 200) } });
     }
     await internalEvent(tctx, d, "created", "DRAFT");
     const warnings = [...comp.warnings];
@@ -386,6 +418,14 @@ export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Prom
 }
 
 // ------------------------------------------------------------------ Rendu
+
+/** Valeurs de rendu : non sensibles (base) + sensibles (actif chiffré), jamais persistées ensemble. */
+async function renderValues(ctx: Deps & { scope: Scope }, d: Dispatch): Promise<Record<string, string>> {
+  const id = (d.optionsJson as { sensitiveValuesAssetId?: string }).sensitiveValuesAssetId;
+  if (!id) return d.mergeValuesJson;
+  const { bytes } = await readAsset(ctx, id);
+  return { ...d.mergeValuesJson, ...(JSON.parse(new TextDecoder().decode(bytes)) as Record<string, string>) };
+}
 
 async function renderDocument(ctx: Ctx, d: Dispatch): Promise<Dispatch> {
   const version = await ctx.db.one<TemplateVersion>("postal_template_versions", { id: d.templateVersionId! });
@@ -398,7 +438,7 @@ async function renderDocument(ctx: Ctx, d: Dispatch): Promise<Dispatch> {
       sender: { businessName: d.senderSnapshotJson.businessName, address: d.senderSnapshotJson.address },
       recipient: d.recipientSnapshotJson,
       content: version.contentJson,
-      values: d.mergeValuesJson,
+      values: await renderValues(ctx, d),
       placeAndDate: `${d.senderSnapshotJson.address.city}, le ${d.mergeValuesJson["date.jour"] ?? parisDate(ctx.clock.now())}`,
       reference: d.reference,
     });

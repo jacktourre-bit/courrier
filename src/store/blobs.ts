@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { uuid } from "../lib/util.js";
 
@@ -11,6 +11,8 @@ import { uuid } from "../lib/util.js";
 export interface BlobStore {
   put(bytes: Uint8Array): Promise<string>;
   get(key: string): Promise<Uint8Array>;
+  /** Suppression définitive (purge de conservation). */
+  delete(key: string): Promise<void>;
 }
 
 export class MemoryBlobStore implements BlobStore {
@@ -24,6 +26,9 @@ export class MemoryBlobStore implements BlobStore {
     const v = this.m.get(key);
     if (!v) throw new Error("Blob introuvable");
     return new Uint8Array(v);
+  }
+  async delete(key: string) {
+    this.m.delete(key);
   }
 }
 
@@ -54,5 +59,9 @@ export class EncryptedFsBlobStore implements BlobStore {
     d.setAAD(Buffer.from(key));
     d.setAuthTag(raw.subarray(12, 28));
     return new Uint8Array(Buffer.concat([d.update(raw.subarray(28)), d.final()]));
+  }
+  async delete(key: string) {
+    if (!/^[0-9a-f-]{36}$/.test(key)) throw new Error("Clé invalide");
+    await rm(join(this.dir, key), { force: true });
   }
 }

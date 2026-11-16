@@ -82,8 +82,40 @@ export interface MergeContext {
   today: string;
 }
 
+/** NIR (n° de sécurité sociale) : 13 chiffres + clé = 97 - (nombre mod 97) ; Corse 2A -> 19, 2B -> 18. */
+export function isValidNir(raw: string): boolean {
+  const v = raw.replace(/\s+/g, "").toUpperCase();
+  if (!/^[1-478]\d{4}(\d{2}|2A|2B)\d{6}\d{2}$/.test(v)) return false;
+  const body = v.slice(0, 13).replace("2A", "19").replace("2B", "18");
+  const key = Number(v.slice(13));
+  return 97 - Number(BigInt(body) % 97n) === key;
+}
+
+/**
+ * Valeurs sensibles/santé : jamais déduites du dossier, toujours saisies par un
+ * utilisateur habilité pour CE courrier (minimisation, §13.1).
+ */
+export function validateSensitiveValues(allowed: string[], provided: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(provided)) {
+    const c = fieldCategory(k);
+    if (c !== "health" && c !== "sensitive") throw new PostalError("VALIDATION", `${k} n'est pas un champ sensible`);
+    if (!allowed.includes(k)) throw new PostalError("VALIDATION", `${k} non autorisé par le modèle`);
+    const val = v.replace(/\s+/g, " ").trim();
+    if (!val || val.length > 300 || /[\r\n]/.test(v)) throw new PostalError("VALIDATION", `Valeur invalide pour ${k}`);
+    if (k === "patient.nir" && !isValidNir(val)) throw new PostalError("VALIDATION", "NIR invalide (clé de contrôle)");
+    if (k === "patient.date_naissance" && !/^\d{2}\/\d{2}\/\d{4}$/.test(val)) throw new PostalError("VALIDATION", "Date de naissance attendue JJ/MM/AAAA");
+    out[k] = k === "patient.nir" ? val.replace(/\s+/g, "").toUpperCase() : val;
+  }
+  for (const k of allowed) {
+    const c = fieldCategory(k);
+    if ((c === "health" || c === "sensitive") && !(k in out)) throw new PostalError("VALIDATION", `Saisie requise par un utilisateur habilité : ${k}`, { field: k });
+  }
+  return out;
+}
+
 /** Valeurs calculées depuis les sources de vérité. Les champs sensibles/santé ne sont jamais résolus ici. */
-export function resolveMergeValues(allowed: string[], ctx: MergeContext): Record<string, string> {
+export function resolveMergeValues(allowed: string[], ctx: MergeContext, opts: { skipSensitive?: boolean } = {}): Record<string, string> {
   const values: Record<string, string | null | undefined> = {
     "patient.civilite": ctx.subject?.civility,
     "patient.prenom": ctx.subject?.firstName,
@@ -103,6 +135,7 @@ export function resolveMergeValues(allowed: string[], ctx: MergeContext): Record
   for (const k of allowed) {
     const c = fieldCategory(k);
     if (c === "health" || c === "sensitive") {
+      if (opts.skipSensitive) continue;
       throw new PostalError("SENSITIVE_BLOCKED", `Variable ${k} non résolue automatiquement : saisie habilitée requise`);
     }
     const v = values[k];

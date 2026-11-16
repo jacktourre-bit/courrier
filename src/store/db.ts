@@ -53,6 +53,7 @@ export const TABLES = [
   "postal_sensitive_authorizations",
   "postal_webhook_receipts",
   "postal_human_tasks",
+  "postal_retention_policies",
 ] as const;
 export type Table = (typeof TABLES)[number];
 

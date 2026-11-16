@@ -7,7 +7,7 @@ import { PostalError } from "../lib/errors.js";
 import { validateUpload } from "../lib/files.js";
 import { scopeFor, type Authenticator } from "./auth.js";
 import * as S from "./schemas.js";
-import { audit, nowIso, readAsset, requireEntity, requireModule, requirePermission, storeAsset, type Ctx, type Deps, type HumanTask } from "../services/context.js";
+import { audit, nowIso, readAsset, requireEntity, requireModule, requirePermission, requireSensitiveRead, storeAsset, type Ctx, type Deps, type HumanTask } from "../services/context.js";
 import {
   approveDispatch,
   cancelDispatch,
@@ -25,8 +25,9 @@ import {
 import { addTemplateVersion, approveTemplateVersion, createTemplate, rollbackTemplate } from "../services/templates.js";
 import { approveCampaign, createCampaign, simulateBirthdayCampaign } from "../services/campaigns.js";
 import { setPreference } from "../services/preferences.js";
-import { addRecipientAddress, createConnection, grantSensitiveAuthorization, setBudget, testConnection, upsertOrganization, upsertSenderProfile, upsertSubject } from "../services/admin.js";
+import { addRecipientAddress, createConnection, grantSensitiveAuthorization, revokeSensitiveAuthorization, setBudget, testConnection, upsertOrganization, upsertSenderProfile, upsertSubject } from "../services/admin.js";
 import { ingestWebhook, MAX_WEBHOOK_BYTES, type WebhookReceipt } from "../services/webhooks.js";
+import { setRetentionPolicy } from "../services/retention.js";
 
 type Env = { Variables: { traceId: string; ctx: Ctx } };
 
@@ -197,7 +198,8 @@ export function createApi(o: ApiOptions) {
       options: b.options,
       scheduledFor: b.scheduled_for ?? null,
       eventKey: b.event_key ?? null,
-      attachments: b.attachments?.map((a) => ({ assetId: a.asset_id, filename: a.filename, category: a.category, sensitivity: a.sensitivity })),
+      attachments: b.attachments?.map((a) => ({ assetId: a.asset_id, filename: a.filename, category: a.category, sensitivity: a.sensitivity, justification: a.justification ?? null })),
+      sensitiveValues: b.sensitive_values,
       idempotencyKey: `${ctx.scope.userId}:${idemKey(c)}`,
     });
     return c.json({ data: view(d) }, 201);
@@ -261,12 +263,13 @@ export function createApi(o: ApiOptions) {
     const d = await getDispatch(ctx, c.req.param("id"));
     const which = c.req.query("which") === "preview" ? d.previewAssetId : d.documentAssetId;
     if (!which) throw new PostalError("NOT_FOUND", "Document indisponible");
-    if ((d.sensitivity === "health" || d.sensitivity === "personal_sensitive") && !ctx.permissions.has("postal.evidence.read") && !ctx.permissions.has("postal.export")) throw new PostalError("FORBIDDEN", "Document sensible");
+    requireSensitiveRead(ctx, d.sensitivity);
     const { bytes, asset } = await readAsset(ctx, which);
     await audit(ctx, { legalEntityId: d.legalEntityId, action: "document.viewed", objectType: "dispatch", objectId: d.id, metadata: { kind: asset.kind } });
     return new Response(bytes, { headers: { "content-type": asset.mimeType, "content-disposition": `inline; filename="${d.reference}.pdf"`, "cache-control": "no-store" } });
   });
   api.get("/dispatches/:id/export", async (c) => {
+    requireSensitiveRead(ctxOf(c), (await getDispatch(ctxOf(c), c.req.param("id"))).sensitivity);
     const { bytes, filename } = await exportDocument(ctxOf(c), c.req.param("id"));
     return new Response(bytes, { headers: { "content-type": "application/pdf", "content-disposition": `attachment; filename="${filename}"`, "cache-control": "no-store" } });
   });
@@ -274,6 +277,7 @@ export function createApi(o: ApiOptions) {
     const ctx = ctxOf(c);
     requirePermission(ctx, "postal.evidence.read");
     const d = await getDispatch(ctx, c.req.param("id"));
+    requireSensitiveRead(ctx, d.sensitivity);
     const e = await ctx.db.one<Evidence>("postal_evidence", { id: c.req.param("evidenceId"), dispatchId: d.id });
     if (!e) throw new PostalError("NOT_FOUND", "Preuve introuvable");
     const { bytes, asset } = await readAsset(ctx, e.securedAssetId);
@@ -288,6 +292,7 @@ export function createApi(o: ApiOptions) {
     const ctx = ctxOf(c);
     requirePermission(ctx, "postal.evidence.read");
     const d = await getDispatch(ctx, c.req.param("id"));
+    requireSensitiveRead(ctx, d.sensitivity);
     const assetSha = async (assetId: string | null) => (assetId ? (await ctx.db.one<{ sha256: string }>("postal_assets", { id: assetId }))?.sha256 ?? null : null);
     const [evidence, events, approvals, receipts] = await Promise.all([
       ctx.db.find<Evidence>("postal_evidence", { dispatchId: d.id }),
@@ -324,6 +329,7 @@ export function createApi(o: ApiOptions) {
     const ctx = ctxOf(c);
     requirePermission(ctx, "postal.evidence.read");
     const d = await getDispatch(ctx, c.req.param("id"));
+    requireSensitiveRead(ctx, d.sensitivity);
     const r = await ctx.db.one<WebhookReceipt>("postal_webhook_receipts", { id: c.req.param("receiptId"), dispatchId: d.id });
     if (!r?.payloadAssetId) throw new PostalError("NOT_FOUND", "Webhook introuvable");
     const { bytes } = await readAsset(ctx, r.payloadAssetId);
@@ -414,7 +420,21 @@ export function createApi(o: ApiOptions) {
   });
   api.post("/sensitive-authorizations", async (c) => {
     const b = parse(S.SensitiveAuthSchema, await json(c));
-    return c.json({ data: await grantSensitiveAuthorization(ctxOf(c), { legalEntityId: b.legal_entity_id, provider: b.provider, templateId: b.template_id, documentRef: b.document_ref, expiresAt: b.expires_at }) }, 201);
+    return c.json({
+      data: await grantSensitiveAuthorization(ctxOf(c), {
+        legalEntityId: b.legal_entity_id, provider: b.provider, templateId: b.template_id, documentRef: b.document_ref, dpaRef: b.dpa_ref, qualification: b.qualification,
+        certificateRef: b.certificate_ref, certificateScope: b.certificate_scope, certificateExpiresAt: b.certificate_expires_at,
+        allowedAttachmentCategoriesJson: b.allowed_attachment_categories, allowedRecipientCategoriesJson: b.allowed_recipient_categories, expiresAt: b.expires_at,
+      }),
+    }, 201);
+  });
+  api.post("/sensitive-authorizations/:id/revoke", async (c) => {
+    await revokeSensitiveAuthorization(ctxOf(c), c.req.param("id"), parse(S.ReasonSchema, await json(c)).reason);
+    return c.json({ ok: true });
+  });
+  api.post("/retention-policies", async (c) => {
+    const b = parse(S.RetentionSchema, await json(c));
+    return c.json({ data: await setRetentionPolicy(ctxOf(c), { legalEntityId: b.legal_entity_id, assetKind: b.asset_kind, retainDays: b.retain_days, legalBasis: b.legal_basis }) }, 201);
   });
 
   // Tâches humaines (« À valider », incidents)

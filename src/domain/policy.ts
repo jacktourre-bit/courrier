@@ -150,5 +150,7 @@ export const ROLE_PERMISSIONS: Record<Role, string[]> = {
   administrateur: ["postal.read", "postal.config.manage", "postal.templates.manage", "postal.organizations.manage", "postal.directory.manage", "postal.audit.read"],
   audit: ["postal.read", "postal.audit.read", "postal.evidence.read"],
 };
-// `postal.approve_sensitive` et `postal.sensitive.authorize` ne sont attribués à aucun rôle par défaut : ils doivent être
-// accordés nominativement après validation DPO (§13.2).
+// Permissions P4, attribuées à AUCUN rôle par défaut, accordées nominativement après validation DPO (§13.2) :
+//   postal.sensitive.authorize (enregistrer une autorisation prestataire), postal.approve_sensitive (étape d'approbation),
+//   postal.sensitive.enter (saisir NIR / données de santé), postal.sensitive.attach (joindre une pièce médicale),
+//   postal.sensitive.read (lire un contenu sensible), postal.retention.manage (durées de conservation).
