@@ -1,0 +1,32 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postal_test
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Rôle applicatif sans BYPASSRLS
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 55432 -U postgres -d postal_test -c "CREATE ROLE postal_app LOGIN PASSWORD 'postal_app' NOSUPERUSER NOBYPASSRLS"
+      - name: Tests PostgreSQL (RLS, contraintes, triggers)
+        run: npm run test:pg
+        env:
+          PG_ADMIN_URL: postgres://postgres:postgres@127.0.0.1:55432/postal_test
+          PG_APP_URL: postgres://postal_app:postal_app@127.0.0.1:55432/postal_test
