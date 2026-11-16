@@ -107,7 +107,7 @@ describe("Service Postal — parcours administratif", () => {
     expect(final.status).toBe("DELIVERED");
     expect(final.trackingNumber).toBe("1A00000000001");
     const ev = await h.root.find<Evidence>("postal_evidence", { dispatchId: d.id });
-    expect(ev.map((e) => e.kind).sort()).toEqual(["deposit_proof", "final_document", "scanned_ar"]);
+    expect(ev.map((e) => e.kind).sort()).toEqual(["deposit_proof", "final_document", "scanned_ar", "tracking"]);
     for (const e of ev) expect(e.sha256).toMatch(/^[0-9a-f]{64}$/);
     // Piste d'audit : création, relecture, approbation finale, soumission.
     const audit = await h.root.find<{ action: string; actorId: string }>("postal_audit_logs", { objectId: d.id });

@@ -16,6 +16,8 @@ type WCtx = Deps & { scope: Scope };
 
 const RECONCILE_FALLBACK_HOURS = 24;
 const MAX_RECONCILES = 21;
+/** Durée maximale d'attente d'une preuve (AR papier scanné, preuve de dépôt) avant alerte humaine. */
+const EVIDENCE_WAIT_DAYS = 60;
 
 export function backoffMs(attempt: number): number {
   return Math.min(6 * 3_600_000, 30_000 * 2 ** Math.max(0, attempt - 1));
@@ -224,7 +226,23 @@ export async function reconcileDispatch(ctx: WCtx, d: Dispatch): Promise<{ dispa
     if (!open) await openTask(ctx, d, "provider_validation", "Lettre générée à valider (fenêtre Manuscry de 60 min après validation)");
   }
   for (const kind of s.evidenceAvailable ?? []) await queueEvidence(ctx, next, kind);
+  // Preuve de distribution / retour : historique de suivi complet archivé (haché) à l'état final.
+  if ((next.status === "DELIVERED" || next.status === "RETURNED") && s.rawTracking && evidenceExpected(next).includes("tracking")) {
+    await storeTrackingEvidence(ctx, next, s.rawTracking, d.provider);
+  }
   return { dispatch: next, status: st };
+}
+
+async function storeTrackingEvidence(ctx: WCtx, d: Dispatch, raw: unknown, provider: string) {
+  if (await ctx.db.one<Evidence>("postal_evidence", { dispatchId: d.id, kind: "tracking" })) return;
+  const bytes = new TextEncoder().encode(JSON.stringify({ uid: d.providerUid, reference: d.reference, status: d.status, fetchedAt: nowIso(ctx), source: `${provider}:/lettres/{uid}/suivi`, response: raw }, null, 2));
+  const asset = await storeAsset(ctx, { tenantId: d.tenantId, legalEntityId: d.legalEntityId, bytes, mimeType: "application/json", sensitivity: d.sensitivity, kind: "evidence_tracking", retentionPolicy: "probatoire_a_definir" });
+  await ctx.db.insertIgnore<Evidence>("postal_evidence", {
+    id: uuid(), tenantId: d.tenantId, legalEntityId: d.legalEntityId, dispatchId: d.id, kind: "tracking", securedAssetId: asset.id, sha256: asset.sha256,
+    obtainedAt: nowIso(ctx), source: `${provider}:/lettres/{uid}/suivi`, retentionPolicy: "probatoire_a_definir",
+  });
+  await internalEvent(ctx, d, "evidence:tracking", null);
+  await audit(ctx, { legalEntityId: d.legalEntityId, action: "evidence.stored", objectType: "dispatch", objectId: d.id, metadata: { kind: "tracking", sha256: asset.sha256 } });
 }
 
 async function queueEvidence(ctx: WCtx, d: Dispatch, kind: EvidenceKind) {
@@ -253,8 +271,12 @@ async function reconcileItem(ctx: WCtx, it: OutboxItem) {
   const n = Number(it.payloadJson.n ?? 1);
   const missingEvidence =
     dispatch.status === "DELIVERED" && evidenceExpected(dispatch).includes("scanned_ar") && !(await ctx.db.one<Evidence>("postal_evidence", { dispatchId: dispatch.id, kind: "scanned_ar" }));
-  if ((!TERMINAL.includes(dispatch.status) || missingEvidence) && dispatch.status !== "UNKNOWN_SUBMISSION_STATUS" && n < MAX_RECONCILES) {
-    await enqueue(ctx, dispatch, "RECONCILE", { n: n + 1 }, new Date(ctx.clock.now().getTime() + RECONCILE_FALLBACK_HOURS * 3_600_000).toISOString());
+  if ((!TERMINAL.includes(dispatch.status) || missingEvidence) && dispatch.status !== "UNKNOWN_SUBMISSION_STATUS") {
+    if (n < MAX_RECONCILES) {
+      await enqueue(ctx, dispatch, "RECONCILE", { n: n + 1 }, new Date(ctx.clock.now().getTime() + RECONCILE_FALLBACK_HOURS * 3_600_000).toISOString());
+    } else {
+      await openTask(ctx, dispatch, "evidence_missing", "Suivi automatique terminé sans toutes les preuves attendues (AR, distribution) : vérifier chez le prestataire");
+    }
   }
 }
 
@@ -267,7 +289,14 @@ async function evidenceItem(ctx: WCtx, it: OutboxItem) {
   const { conn, adapter } = await resolveConnection(ctx, d.legalEntityId, d.provider);
   const r = await adapter.fetchEvidence(conn as ProviderConnection, { uid: d.providerUid, identifier: d.reference, letterId: d.providerLetterId }, kind);
   if (!r.ok) {
-    if (r.kind === "NOT_AVAILABLE") return failItem(ctx, it, "preuve pas encore disponible", "retry_after", Math.max(backoffMs(it.attempts + 1), 3_600_000));
+    if (r.kind === "NOT_AVAILABLE") {
+      const ageDays = (ctx.clock.now().getTime() - Date.parse(it.createdAt)) / 86_400_000;
+      if (ageDays > EVIDENCE_WAIT_DAYS) return failItem(ctx, it, `preuve ${kind} toujours indisponible après ${EVIDENCE_WAIT_DAYS} jours`, "human");
+      const waits = Number(it.payloadJson.waits ?? 0);
+      const delay = Math.min(24 * 3_600_000, 3_600_000 * 2 ** waits);
+      await ctx.db.update("postal_outbox", { id: it.id }, { status: "pending", lockedUntil: null, lastError: "preuve pas encore disponible", payloadJson: { ...it.payloadJson, waits: waits + 1 }, nextRetryAt: new Date(ctx.clock.now().getTime() + delay).toISOString() });
+      return;
+    }
     if (r.kind === "UNSUPPORTED") return done(ctx, it, "non supporté");
     return failItem(ctx, it, r.message, r.kind === "DEFINITIVE" ? "human" : "retry");
   }

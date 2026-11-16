@@ -261,13 +261,15 @@ export class ServicePostalAdapter implements PostalProviderAdapter {
     const postage = info.value?.data?.type_affranchissement;
     const events: StatusResult["events"] = [];
     let tracking: string | null = null;
+    let rawTracking: unknown = null;
     const evidenceAvailable: EvidenceKind[] = [];
     let mapped: DispatchStatus | null = statut ? SP_INFO_STATUS[statut] ?? null : null;
     if (postage && isTracked(postage as never)) {
-      const s = await this.call<{ numero_suivi_laposte?: string; evenements?: { date_statut?: string; code_statut?: string; type_statut?: string }[] }>(
+      const s = await this.call<{ numero_suivi_laposte?: string; evenements?: { date_statut?: string; code_statut?: string; type_statut?: string; message_statut?: string; pnd?: boolean }[] }>(
         conn, "GET", `/lettres/${uid}/suivi`, undefined, false,
       );
       if (s.ok) {
+        rawTracking = s.value ?? null;
         tracking = s.value?.numero_suivi_laposte ?? null;
         for (const e of s.value?.evenements ?? []) {
           if (!e.code_statut) continue;
@@ -289,9 +291,13 @@ export class ServicePostalAdapter implements PostalProviderAdapter {
     else if (best.includes("RETURNED")) mapped = "RETURNED";
     else if (best.includes("IN_TRANSIT")) mapped = "IN_TRANSIT";
     else if (best.includes("POSTAL_DEPOSITED") && mapped !== "CANCELLED") mapped = "POSTAL_DEPOSITED";
-    if (statut === "imprime" || statut === "depose") evidenceAvailable.push("final_document");
-    if ((postage === "lr" || postage === "lrar") && (statut === "depose" || best.length > 0)) evidenceAvailable.push("deposit_proof");
-    return ok({ ref, rawStatus: statut, mappedStatus: mapped, events, trackingNumber: tracking, evidenceAvailable });
+    const codes = new Set(events.map((e) => e.eventType));
+    const deposited = statut === "depose" || best.some((x) => x === "POSTAL_DEPOSITED" || x === "IN_TRANSIT" || x === "DELIVERED" || x === "RETURNED");
+    // Document final : disponible une fois le courrier produit.
+    if (statut === "imprime" || statut === "depose" || codes.has("courrier_produit") || deposited) evidenceAvailable.push("final_document");
+    // Preuve de dépôt : seulement après prise en charge par La Poste (pas dès « soumis »).
+    if ((postage === "lr" || postage === "lrar") && deposited) evidenceAvailable.push("deposit_proof");
+    return ok({ ref, rawStatus: statut, mappedStatus: mapped, events, trackingNumber: tracking, evidenceAvailable, rawTracking });
   }
 
   async fetchEvidence(conn: ProviderConnection, ref: ProviderRef, kind: EvidenceKind): Promise<ProviderResult<EvidenceResult>> {

@@ -26,7 +26,8 @@ Règle : tout ce qui n'est pas « documenté » ou « testé en sandbox réelle 
 | Suivi | `GET /lettres/{uid}/suivi` → `code_statut` (soumis, courrier_produit, pris_en_charge, attente_retrait_guichet, distribue_destinataire[_en_lot], distribue_expediteur, retour_expediteur, ar_scanne) | ✅ (LR, LRAR, verte suivie, performance suivie) | Simulateur | Fuseau des `date_statut` |
 | Document final | `GET /lettres/{uid}/contenu` (base64) | ✅ | Simulateur | Délai de disponibilité |
 | Preuve de dépôt | `GET /lettres/{uid}/preuve_depot` → URL | ✅ (recommandés) | Simulateur | **Domaines d'hébergement** des URL (liste blanche SSRF à renseigner) |
-| AR scanné | `GET /scannedproof/letter/{uid}` (option `ar_scan`, LRAR) | ✅ | Simulateur | Coût de l'option |
+| AR scanné | `GET /scannedproof/letter/{uid}` (option `ar_scan`, LRAR) — **activée par défaut** sur toute LRAR | ✅ | Simulateur (AR arrivant à J+10) | Coût de l'option ; délai réel de numérisation |
+| Historique de distribution | réponse complète de `/suivi` archivée (JSON haché) à la distribution ou au retour | ✅ | Simulateur | Valeur probante de cet historique (cahier Q7) |
 | Adresses | 2 lignes de 38 car. max, civilités imposées, pays en toutes lettres (FR) | ✅ | Simulateur + unitaires | Liste complète des pays (11 mappés) |
 | Webhooks | « service Webhook » mentionné, activation par contact technique | ⚠️ format non publié | Simulateur (extraction d'UID générique) | **Format, signature, retries, événements** |
 | Publipostage | `/publipostages/*` (checkcsv, prix, soumettre, valider, annuler, statut…) | ✅ | ❌ non implémenté (P3) | Limite de 20 champs de fusion (non trouvée dans l'OpenAPI) |

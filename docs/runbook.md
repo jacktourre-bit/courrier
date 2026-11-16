@@ -18,6 +18,12 @@ Principe : **ne jamais renvoyer un courrier à l'aveugle.** Avant toute nouvelle
 | `FAILED_VALIDATION` | Blocage de conformité au dernier moment (opposition, décès, document modifié) | C'est normal : ne pas forcer. Créer un nouveau courrier si l'envoi reste légitime. |
 | `CANCEL_REQUESTED` resté longtemps | Le prestataire n'a pas répondu | Le worker réessaie. Un refus remet l'envoi à son statut précédent et ouvre la tâche `cancel_refused`. Service Postal : un numéro d'urgence figure dans sa documentation (endpoint `annuler`). |
 
+## Preuves d'un recommandé
+
+- Les preuves non encore disponibles sont redemandées avec une attente croissante (1 h, puis jusqu'à 24 h), pendant 60 jours au plus, sans abandon prématuré. Ensuite, une tâche humaine est ouverte.
+- Le suivi quotidien s'arrête après 21 relectures. Si l'AR ou l'historique manque encore, la tâche `evidence_missing` est ouverte.
+- `GET /api/postal/dispatches/{id}/evidence-bundle` montre ce qui est obtenu, ce qui est attendu et ce qui manque.
+
 ## Webhooks
 
 - **Jeton compromis** : créer une nouvelle connexion (nouveau jeton), désactiver l'ancienne (`status = 'disabled'`) et reconfigurer l'URL chez le prestataire.

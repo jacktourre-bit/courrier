@@ -100,6 +100,8 @@ export interface StatusResult {
   /** Le prestataire attend une validation de la lettre générée (Manuscry). */
   awaitingProviderValidation?: boolean;
   evidenceAvailable?: EvidenceKind[];
+  /** Réponse de suivi brute (archivée comme preuve de distribution). */
+  rawTracking?: unknown;
 }
 
 export interface EvidenceResult {

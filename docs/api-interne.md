@@ -40,6 +40,8 @@ Codes d'erreur : `FORBIDDEN`, `NOT_FOUND`, `VALIDATION`, `COMPLIANCE_BLOCKED` (a
 | GET | `/dispatches/{id}/document?which=preview` | postal.read (+ evidence.read si sensible) | Téléchargement contrôlé, journalisé |
 | GET | `/dispatches/{id}/export` | postal.export | Export sécurisé quand l'envoi externe est interdit |
 | GET | `/dispatches/{id}/evidence/{evidenceId}` | postal.evidence.read | Preuve (en-tête `x-sha256`) |
+| GET | `/dispatches/{id}/evidence-bundle` | postal.evidence.read | **Dossier de preuves** : document approuvé, aperçu, document imprimé, preuve de dépôt, AR scanné, historique de distribution, webhooks, approbations (SHA-256 et lien de téléchargement pour chacun) |
+| GET | `/dispatches/{id}/webhooks/{receiptId}` | postal.evidence.read | Contenu brut d'un webhook reçu (chiffré au repos, en-tête `x-sha256`) |
 | GET | `/subjects/{type}/{id}/dispatches` | postal.read | Section « Correspondances » de la fiche |
 | POST | `/campaigns` | campaign.manage | Création de campagne |
 | GET | `/campaigns` | postal.read | Liste des campagnes |

@@ -1,6 +1,6 @@
 import type { Dispatch, ProviderConnection, ProviderName, Scope } from "../domain/types.js";
 import { sha256, safeEqual, uuid } from "../lib/util.js";
-import { nowIso, providerEnabled, type Deps } from "./context.js";
+import { nowIso, providerEnabled, storeAsset, type Deps } from "./context.js";
 import { enqueue } from "./dispatch-service.js";
 
 /**
@@ -27,6 +27,8 @@ export interface WebhookReceipt {
   dispatchId: string | null;
   result: WebhookOutcome["result"];
   receivedAt: string;
+  /** Contenu brut chiffré (preuve de réception de la notification), null si doublon/ignoré. */
+  payloadAssetId: string | null;
 }
 
 export const MAX_WEBHOOK_BYTES = 64 * 1024;
@@ -66,6 +68,7 @@ export async function ingestWebhook(deps: Deps, provider: ProviderName, token: s
     dispatchId: null,
     result: "accepted",
     receivedAt: at,
+    payloadAssetId: null,
   };
 
   if (w.ignore) {
@@ -79,7 +82,11 @@ export async function ingestWebhook(deps: Deps, provider: ProviderName, token: s
   if (!d && w.lookup.identifier) d = await db.one<Dispatch>("postal_dispatches", { provider, reference: w.lookup.identifier });
   if (!d && w.lookup.letterId) d = await db.one<Dispatch>("postal_dispatches", { provider, providerLetterId: w.lookup.letterId });
 
-  const fresh = await db.insertIgnore("postal_webhook_receipts", { ...receipt, dispatchId: d?.id ?? null, result: d ? "accepted" : "unmatched" });
+  const known = await db.one<WebhookReceipt>("postal_webhook_receipts", { provider, dedupKey: w.dedupKey });
+  if (known) return { httpStatus: 200, result: "duplicate" };
+  // Contenu brut conservé chiffré (il contient des données personnelles) : preuve de la notification reçue.
+  const asset = await storeAsset(ctx, { tenantId: conn.tenantId, legalEntityId: conn.legalEntityId, bytes: new TextEncoder().encode(rawBody), mimeType: "application/json", sensitivity: d?.sensitivity ?? "personal_non_health", kind: "webhook_payload", retentionPolicy: "probatoire_a_definir" });
+  const fresh = await db.insertIgnore("postal_webhook_receipts", { ...receipt, dispatchId: d?.id ?? null, result: d ? "accepted" : "unmatched", payloadAssetId: asset.id });
   if (!fresh) return { httpStatus: 200, result: "duplicate" };
   if (!d) {
     deps.logger.warn("webhook.unmatched", { provider, eventType: w.eventType });

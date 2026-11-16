@@ -321,6 +321,8 @@ export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Prom
     postageClass: input.postageClass,
     optionsJson: {
       ...(input.options ?? {}),
+      // LRAR : AR dématérialisé par défaut pour disposer d'une preuve de réception numérique.
+      ...(input.postageClass === "lrar" && input.options?.arScan === undefined ? { arScan: true } : {}),
       ...(addressId ? { addressId } : {}),
       ...(organizationId ? { organizationId } : {}),
       ...(input.requiredPreference ? { requiredPreference: input.requiredPreference } : {}),
@@ -376,7 +378,9 @@ export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Prom
       });
     }
     await internalEvent(tctx, d, "created", "DRAFT");
-    await audit(tctx, { legalEntityId: d.legalEntityId, action: "dispatch.created", objectType: "dispatch", objectId: d.id, metadata: { purpose: d.purpose, provider, sensitivity: d.sensitivity, warnings: comp.warnings } });
+    const warnings = [...comp.warnings];
+    if (d.postageClass === "lrar" && !d.optionsJson.arScan) warnings.push("AR papier : retour physique, aucune preuve de réception numérique");
+    await audit(tctx, { legalEntityId: d.legalEntityId, action: "dispatch.created", objectType: "dispatch", objectId: d.id, metadata: { purpose: d.purpose, provider, sensitivity: d.sensitivity, warnings } });
     return renderDocument(tctx, d);
   });
 }

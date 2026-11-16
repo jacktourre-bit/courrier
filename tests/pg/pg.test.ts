@@ -20,9 +20,9 @@ const APP = process.env.PG_APP_URL ?? "postgres://postal_app:postal_app@127.0.0.
 describe.skipIf(!enabled)("PostgreSQL", () => {
   let pool: pg.Pool;
   beforeAll(async () => {
-    await migrate(ADMIN, { down: true }).catch(() => {});
+    for (let i = 0; i < 5; i++) await migrate(ADMIN, { down: true }).catch(() => {});
     const applied = await migrate(ADMIN, { appRole: "postal_app" });
-    expect(applied).toContain("0001_postal_module.up.sql");
+    expect(applied).toEqual(["0001_postal_module.up.sql", "0002_webhook_payloads.up.sql"]);
     pool = new pg.Pool({ connectionString: APP });
   });
   afterAll(async () => {
@@ -83,6 +83,7 @@ describe.skipIf(!enabled)("PostgreSQL", () => {
     await admin.query("TRUNCATE postal_campaign_recipients, postal_outbox, postal_events, postal_attachments, postal_evidence, postal_approvals, postal_dispatches CASCADE").catch(async () => {
       // tables immuables : on repart d'un schéma neuf
       await migrate(ADMIN, { down: true });
+      await migrate(ADMIN, { down: true });
       await migrate(ADMIN, { appRole: "postal_app" });
     });
     await admin.end();
@@ -101,6 +102,7 @@ describe.skipIf(!enabled)("PostgreSQL", () => {
   });
 
   it("migration réversible", async () => {
+    expect(await migrate(ADMIN, { down: true })).toEqual(["down:0002_webhook_payloads.up.sql"]);
     expect(await migrate(ADMIN, { down: true })).toEqual(["down:0001_postal_module.up.sql"]);
     const c = new pg.Client({ connectionString: ADMIN });
     await c.connect();

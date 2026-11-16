@@ -26,7 +26,7 @@ import { addTemplateVersion, approveTemplateVersion, createTemplate, rollbackTem
 import { approveCampaign, createCampaign, simulateBirthdayCampaign } from "../services/campaigns.js";
 import { setPreference } from "../services/preferences.js";
 import { addRecipientAddress, createConnection, grantSensitiveAuthorization, setBudget, testConnection, upsertOrganization, upsertSenderProfile, upsertSubject } from "../services/admin.js";
-import { ingestWebhook, MAX_WEBHOOK_BYTES } from "../services/webhooks.js";
+import { ingestWebhook, MAX_WEBHOOK_BYTES, type WebhookReceipt } from "../services/webhooks.js";
 
 type Env = { Variables: { traceId: string; ctx: Ctx } };
 
@@ -279,6 +279,56 @@ export function createApi(o: ApiOptions) {
     const { bytes, asset } = await readAsset(ctx, e.securedAssetId);
     await audit(ctx, { legalEntityId: d.legalEntityId, action: "evidence.viewed", objectType: "dispatch", objectId: d.id, metadata: { kind: e.kind } });
     return new Response(bytes, { headers: { "content-type": asset.mimeType, "content-disposition": `attachment; filename="${d.reference}-${e.kind}"`, "x-sha256": e.sha256 } });
+  });
+  /**
+   * Dossier de preuves d'un envoi : document approuvé, aperçu prestataire, document final imprimé,
+   * preuve de dépôt, AR scanné, historique de distribution, webhooks reçus, approbations — avec SHA-256.
+   */
+  api.get("/dispatches/:id/evidence-bundle", async (c) => {
+    const ctx = ctxOf(c);
+    requirePermission(ctx, "postal.evidence.read");
+    const d = await getDispatch(ctx, c.req.param("id"));
+    const assetSha = async (assetId: string | null) => (assetId ? (await ctx.db.one<{ sha256: string }>("postal_assets", { id: assetId }))?.sha256 ?? null : null);
+    const [evidence, events, approvals, receipts] = await Promise.all([
+      ctx.db.find<Evidence>("postal_evidence", { dispatchId: d.id }),
+      ctx.db.find<PostalEvent>("postal_events", { dispatchId: d.id }, { orderBy: [["occurredAt", "asc"]] }),
+      ctx.db.find<Approval>("postal_approvals", { dispatchId: d.id }, { orderBy: [["timestamp", "asc"]] }),
+      ctx.db.find<WebhookReceipt>("postal_webhook_receipts", { dispatchId: d.id }, { orderBy: [["receivedAt", "asc"]] }),
+    ]);
+    const expected = evidenceExpected(d);
+    const base = `/api/postal/dispatches/${d.id}`;
+    await audit(ctx, { legalEntityId: d.legalEntityId, action: "evidence.bundle_viewed", objectType: "dispatch", objectId: d.id });
+    return c.json({
+      data: {
+        reference: d.reference,
+        provider: d.provider,
+        provider_uid: d.providerUid,
+        postage_class: d.postageClass,
+        ar_scan: !!d.optionsJson.arScan,
+        status: d.status,
+        tracking_number: d.trackingNumber,
+        submitted_at: d.submittedAt,
+        delivered_at: d.deliveredAt,
+        approved_document: { sha256: await assetSha(d.documentAssetId), download: `${base}/document` },
+        provider_preview: { sha256: await assetSha(d.previewAssetId), download: `${base}/document?which=preview` },
+        approvals: approvals.map((a) => ({ step: a.step, action: a.action, by: a.approverUserId, at: a.timestamp, reason: a.reason })),
+        evidence: evidence.map((e) => ({ kind: e.kind, sha256: e.sha256, obtained_at: e.obtainedAt, source: e.source, download: `${base}/evidence/${e.id}` })),
+        evidence_expected: expected,
+        evidence_missing: expected.filter((k) => !evidence.some((e) => e.kind === k)),
+        provider_events: events.filter((e) => e.provider !== "internal").map((e) => ({ type: e.eventType, mapped: e.mappedStatus, at: e.occurredAt, received_at: e.receivedAt })),
+        webhooks: receipts.map((r) => ({ event_type: r.eventType, received_at: r.receivedAt, payload_sha256: r.payloadDigest, download: r.payloadAssetId ? `${base}/webhooks/${r.id}` : null })),
+      },
+    });
+  });
+  api.get("/dispatches/:id/webhooks/:receiptId", async (c) => {
+    const ctx = ctxOf(c);
+    requirePermission(ctx, "postal.evidence.read");
+    const d = await getDispatch(ctx, c.req.param("id"));
+    const r = await ctx.db.one<WebhookReceipt>("postal_webhook_receipts", { id: c.req.param("receiptId"), dispatchId: d.id });
+    if (!r?.payloadAssetId) throw new PostalError("NOT_FOUND", "Webhook introuvable");
+    const { bytes } = await readAsset(ctx, r.payloadAssetId);
+    await audit(ctx, { legalEntityId: d.legalEntityId, action: "webhook_payload.viewed", objectType: "dispatch", objectId: d.id });
+    return new Response(bytes, { headers: { "content-type": "application/json", "x-sha256": r.payloadDigest, "cache-control": "no-store" } });
   });
   api.get("/subjects/:type/:id/dispatches", async (c) => {
     const ctx = ctxOf(c);
