@@ -176,8 +176,8 @@ export class MemoryDb implements Db {
 
   async find<T>(t: Table, where: Where = {}, opts: FindOpts = {}): Promise<T[]> {
     let res = this.rows(t).filter((r) => scopeFilter(this.scope, t, r) && matches(r, where));
-    for (const [col, dir] of [...(opts.orderBy ?? [])].reverse()) {
-      res = [...res].sort((a, b) => {
+    for (const [col, dir] of (opts.orderBy ?? []).toReversed()) {
+      res = res.toSorted((a, b) => {
         const av = a[col] as string | number;
         const bv = b[col] as string | number;
         const c = av === bv ? 0 : av === null || av === undefined ? -1 : bv === null || bv === undefined ? 1 : av < bv ? -1 : 1;
@@ -217,7 +217,7 @@ export class MemoryDb implements Db {
     const due = this.rows("postal_outbox")
       .filter((r) => scopeFilter(this.scope, "postal_outbox", r))
       .filter((r) => (r.status === "pending" || (r.status === "processing" && (r.lockedUntil as string) < nowIso)) && (r.nextRetryAt as string) <= nowIso)
-      .sort((a, b) => String(a.nextRetryAt).localeCompare(String(b.nextRetryAt)))
+      .toSorted((a, b) => String(a.nextRetryAt).localeCompare(String(b.nextRetryAt)))
       .slice(0, limit);
     const until = new Date(Date.parse(nowIso) + lockMs).toISOString();
     for (const r of due) Object.assign(r, { status: "processing", lockedUntil: until });

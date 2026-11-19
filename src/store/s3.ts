@@ -56,13 +56,13 @@ export function signV4(i: SignInput): Record<string, string> {
   const amzDate = i.date.toISOString().replace(/[:-]|\.\d{3}/g, "");
   const day = amzDate.slice(0, 8);
   const headers: Record<string, string> = { ...i.headers, host: i.url.host, "x-amz-date": amzDate, "x-amz-content-sha256": i.payloadHash };
-  const names = Object.keys(headers).map((h) => h.toLowerCase()).sort();
+  const names = Object.keys(headers).map((h) => h.toLowerCase()).toSorted();
   const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), String(v).trim().replace(/\s+/g, " ")]));
   const canonicalHeaders = names.map((n) => `${n}:${lower[n]}\n`).join("");
   const signedHeaders = names.join(";");
   const query = [...i.url.searchParams.entries()]
     .map(([k, v]) => [uriEncode(k), uriEncode(v)] as const)
-    .sort(([a, av], [b, bv]) => (a === b ? (av < bv ? -1 : 1) : a < b ? -1 : 1))
+    .toSorted(([a, av], [b, bv]) => (a === b ? (av < bv ? -1 : 1) : a < b ? -1 : 1))
     .map(([k, v]) => `${k}=${v}`)
     .join("&");
   const path = i.url.pathname.split("/").map((seg) => uriEncode(decodeURIComponent(seg))).join("/") || "/";
@@ -84,7 +84,7 @@ export class S3BlobStore implements BlobStore {
   constructor(private readonly c: S3Config) {
     this.key = Buffer.from(c.encryptionKeyBase64, "base64");
     if (this.key.length !== 32) throw new Error("Clé de chiffrement invalide (32 octets attendus)");
-    if (!/^https:\/\//.test(c.endpoint)) throw new Error("Endpoint S3 HTTPS requis");
+    if (!c.endpoint.startsWith("https://")) throw new Error("Endpoint S3 HTTPS requis");
   }
 
   private url(key: string): URL {

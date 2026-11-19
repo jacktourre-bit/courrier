@@ -19,7 +19,7 @@ const call = (method: string, path: string, opts: { tok?: string; le?: string; b
       ...(opts.tok ? { authorization: `Bearer ${opts.tok}` } : {}),
       ...(opts.le ? { "x-legal-entity-id": opts.le } : {}),
       ...(opts.body !== undefined ? { "content-type": "application/json" } : {}),
-      ...(opts.headers ?? {}),
+      ...opts.headers,
     },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });

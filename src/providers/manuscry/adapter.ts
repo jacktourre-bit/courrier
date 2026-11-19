@@ -303,7 +303,7 @@ export class ManuscryAdapter implements PostalProviderAdapter {
         events: [],
       });
     }
-    const latest = [...letters.value].sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))[0]!;
+    const latest = letters.value.toSorted((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))[0]!;
     const raw = latest.is_returned ? "returned" : latest.status ?? null;
     return ok({
       ref: { ...ref, letterId: String(latest.id), leadId: latest.lead_id !== undefined ? String(latest.lead_id) : ref.leadId ?? null },

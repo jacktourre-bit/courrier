@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "import", "promise", "node"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "import/no-named-as-default-member": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "eslint/no-unmodified-loop-condition": "off"
+  },
+  "env": { "node": true, "es2024": true },
+  "ignorePatterns": ["dist/**", "node_modules/**"]
+}

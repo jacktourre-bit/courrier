@@ -110,7 +110,7 @@ export function evaluateCompliance(i: ComplianceInput): { allowed: boolean; bloc
   const pref = (p: ContactPreference["purpose"]) =>
     i.preferences
       .filter((x) => x.purpose === p && x.channel === "postal" && x.legalEntityId === i.legalEntityId)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || Number(a.allowed) - Number(b.allowed))[0];
+      .toSorted((x, y) => y.updatedAt.localeCompare(x.updatedAt) || Number(x.allowed) - Number(y.allowed))[0];
   const main = pref(i.purpose);
   if (main && !main.allowed) add("opposition", `Opposition enregistrée pour la finalité ${i.purpose}`);
   if (i.requiredPreference) {

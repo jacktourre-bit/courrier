@@ -28,7 +28,7 @@ export function canonicalJson(value: unknown): string {
   const obj = value as Record<string, unknown>;
   return `{${Object.keys(obj)
     .filter((k) => obj[k] !== undefined)
-    .sort()
+    .toSorted()
     .map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`)
     .join(",")}}`;
 }

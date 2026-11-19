@@ -18,7 +18,6 @@ import type {
   OutboxAction,
   OutboxItem,
   PostageClass,
-  PostalAddress,
   PostalEvent,
   ProviderConnection,
   Purpose,
@@ -364,7 +363,7 @@ export async function createDispatch(ctx: Ctx, input: CreateDispatchInput): Prom
     sensitivity: sens.level,
     postageClass: input.postageClass,
     optionsJson: {
-      ...(input.options ?? {}),
+      ...input.options,
       // LRAR : AR dématérialisé par défaut pour disposer d'une preuve de réception numérique.
       ...(input.postageClass === "lrar" && input.options?.arScan === undefined ? { arScan: true } : {}),
       ...(addressId ? { addressId } : {}),
@@ -683,7 +682,7 @@ export async function approveDispatch(ctx: Ctx, id: string, opts: { reason?: str
     await invalidateApprovals(ctx, d, "Contenu modifié depuis la demande d'approbation");
     throw new PostalError("CONFLICT", "Le courrier a changé : approbation invalidée, nouvelle prévisualisation requise");
   }
-  const approvals = (await ctx.db.find<Approval>("postal_approvals", { dispatchId: d.id, approvalHash: current, action: "approve" })).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const approvals = (await ctx.db.find<Approval>("postal_approvals", { dispatchId: d.id, approvalHash: current, action: "approve" })).toSorted((a, b) => a.timestamp.localeCompare(b.timestamp));
   const steps = requiredSteps(d);
   const done = new Set(approvals.map((a) => a.step));
   const next = steps.find((s) => !done.has(s.step));
@@ -777,7 +776,7 @@ export async function modifyDispatch(ctx: Ctx, id: string, change: { scheduledFo
     routeProvider({ purpose: d.purpose, rendering: d.provider === "manuscry" ? "handwritten" : "formal", postageClass: change.postageClass, hasAttachments: false, needsProof: false });
   }
   let recipient = d.recipientSnapshotJson;
-  let options = { ...d.optionsJson, ...(change.options ?? {}) };
+  let options = { ...d.optionsJson, ...change.options };
   if (change.recipientAddressId) {
     const a = await ctx.db.one<RecipientAddress>("postal_recipient_addresses", { id: change.recipientAddressId, subjectType: d.subjectType, subjectId: d.subjectId });
     if (!a) throw new PostalError("NOT_FOUND", "Adresse introuvable pour cette personne");

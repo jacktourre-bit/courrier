@@ -15,7 +15,7 @@ export async function migrate(url: string, opts: { down?: boolean; appRole?: str
   try {
     await c.query("CREATE TABLE IF NOT EXISTS postal_schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())");
     const done = new Set((await c.query("SELECT name FROM postal_schema_migrations")).rows.map((r) => r.name as string));
-    const files = (await readdir(dir)).filter((f) => f.endsWith(".up.sql")).sort();
+    const files = (await readdir(dir)).filter((f) => f.endsWith(".up.sql")).toSorted();
     const applied: string[] = [];
     if (opts.down) {
       const last = files.filter((f) => done.has(f)).at(-1);

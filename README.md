@@ -64,6 +64,12 @@ npm ci
 npm test
 ```
 
+Vérification du code (oxlint, règles compatibles ESLint ; `typescript-eslint` ne prend pas en charge TypeScript 7) :
+
+```bash
+npm run lint
+```
+
 ```bash
 cp .env.example .env
 ```

@@ -61,7 +61,7 @@ describe("Recommandé avec AR — chaîne de preuves", () => {
     expect((await ingestWebhook(h.deps, "servicepostal", s.spWebhookToken, wh)).result).toBe("accepted");
     await drain(3);
     let ev = await h.root.find<Evidence>("postal_evidence", { dispatchId: d.id });
-    expect(ev.map((e) => e.kind).sort()).toEqual(["deposit_proof", "final_document"]);
+    expect(ev.map((e) => e.kind).toSorted()).toEqual(["deposit_proof", "final_document"]);
 
     // Distribution
     h.sp.advance(d.providerUid!, "distribue");
@@ -76,7 +76,7 @@ describe("Recommandé avec AR — chaîne de preuves", () => {
       await drain(2);
     }
     ev = await h.root.find<Evidence>("postal_evidence", { dispatchId: d.id });
-    expect(ev.map((e) => e.kind).sort()).toEqual(["deposit_proof", "final_document", "scanned_ar", "tracking"]);
+    expect(ev.map((e) => e.kind).toSorted()).toEqual(["deposit_proof", "final_document", "scanned_ar", "tracking"]);
     const dead = await h.root.find<OutboxItem>("postal_outbox", { dispatchId: d.id, status: { in: ["dead", "human_task"] } });
     expect(dead).toHaveLength(0);
 

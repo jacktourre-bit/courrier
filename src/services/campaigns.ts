@@ -46,7 +46,7 @@ export async function createCampaign(ctx: Ctx, i: { legalEntityId: string; cente
     providerCampaignId: v.providerFieldsJson?.campaignId ?? null,
     templateVersionId: v.id,
     purpose: i.purpose,
-    schedulingRulesJson: i.type === "birthday" ? { ...DEFAULT_BIRTHDAY_RULES, ...(i.rules ?? {}) } : {},
+    schedulingRulesJson: i.type === "birthday" ? { ...DEFAULT_BIRTHDAY_RULES, ...i.rules } : {},
     budgetCents: i.budgetCents ?? null,
     status: "draft",
     approvedBy: null,

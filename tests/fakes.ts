@@ -124,7 +124,7 @@ export class FakeServicePostal extends FakeServer {
         return json(200, { data: { statut: l.statut, type_affranchissement: l.type_affranchissement, date_creation: "2026-11-16" } });
       case "suivi":
         if (!["lr", "lrar", "vertesuivi", "perfsuivi"].includes(l.type_affranchissement)) return json(400, { code: 400, message: "Pas de suivi" });
-        return json(200, { numero_suivi_laposte: "1A00000000001", evenements: [...l.events].reverse() });
+        return json(200, { numero_suivi_laposte: "1A00000000001", evenements: l.events.toReversed() });
       case "contenu":
         if (l.statut !== "imprime" && l.statut !== "depose") return json(404, { code: 404, message: "Pas encore généré" });
         return json(200, { code: 200, message: "ok", base64: Buffer.from(this.pdf ?? (await tinyPdf("final"))).toString("base64") });

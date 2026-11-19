@@ -22,6 +22,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm test
       - name: Rôle applicatif sans BYPASSRLS
         run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 55432 -U postgres -d postal_test -c "CREATE ROLE postal_app LOGIN PASSWORD 'postal_app' NOSUPERUSER NOBYPASSRLS"
